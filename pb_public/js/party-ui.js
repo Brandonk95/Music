@@ -16,7 +16,7 @@ const SYNC_TEXT = {
   host: 'You\'re the host',
 };
 
-const MEMBER_TEXT = { joined: 'Joined', synced: 'In sync', failed: 'Can\'t hear you', network: 'No mic' };
+const MEMBER_TEXT = { joined: 'Joined', listening: 'Syncing…', synced: 'In sync', failed: 'Can\'t hear you', network: 'No mic' };
 
 let detailsSheet = null;
 
@@ -182,6 +182,9 @@ function drawDetails(body) {
       h('p', { class: 'hint' },
         '▶ starts everyone after a short count-off. The big button then pauses: every phone goes silent but keeps counting, so you can talk and ▶ comes back in on the beat. Stop (beside it) ends the beat and resets.',
         ' Tempo or meter changes start on the next downbeat — nobody needs to re-sync.'),
+      h('label', { class: 'field row toggle-row' }, 'Warn me before I could spoil someone’s sync',
+        h('input', { type: 'checkbox', class: 'switch', checked: !warningsOff(),
+          onchange: (e) => { if (e.target.checked) localStorage.removeItem(WARN_OFF_KEY); else localStorage.setItem(WARN_OFF_KEY, '1'); } })),
       h('button', { class: 'ghost wide danger', onclick: async () => {
         if (!confirm('End the group for everyone?')) return;
         close(); await party.leave({ end: true }); toast('Group ended');
@@ -231,9 +234,54 @@ export function openJoinLink(code) {
   openStartSheet(c);
 }
 
+// ---------- host warnings ----------
+
+const WARN_OFF_KEY = 'tt.groupWarningsOff';
+const warningsOff = () => localStorage.getItem(WARN_OFF_KEY) === '1';
+
+function names(list) {
+  const n = list.map((m) => m.name || 'A user');
+  if (n.length === 1) return n[0];
+  if (n.length === 2) return `${n[0]} and ${n[1]}`;
+  return `${n[0]}, ${n[1]} and ${n.length - 2} more`;
+}
+const isAre = (list) => (list.length === 1 ? 'is' : 'are');
+
+const WARNINGS = {
+  pause: (who) => ({ title: 'Pause during a sync?', ok: 'Pause anyway',
+    text: `${names(who)} ${isAre(who)} syncing to your clicks right now. Pausing goes silent, so their sync will fail and they’ll need to try again.` }),
+  stop: (who) => ({ title: 'Stop during a sync?', ok: 'Stop anyway',
+    text: `${names(who)} ${isAre(who)} syncing to your clicks right now. Stopping will make their sync fail and they’ll need to try again.` }),
+  drone: (who) => ({ title: 'Start the drone during a sync?', ok: 'Start drone',
+    text: `${names(who)} ${isAre(who)} listening for your clicks right now, and the drone can drown them out. Waiting a few seconds is safer.` }),
+  tempo: (who) => ({ title: 'Change tempo during a sync?', ok: 'Change it',
+    text: `${names(who)} ${isAre(who)} syncing to your clicks right now. Changing the tempo or meter can make their sync fail. Cancel puts it back.` }),
+  output: (who) => ({ title: 'Your audio output changed', ok: 'OK', notice: true,
+    text: `This phone seems to have switched speakers (for example Bluetooth or headphones). ${names(who)} ${isAre(who)} synced to the old speaker, so they may now be off the beat. Switch back, or ask everyone to tap Re-sync.` }),
+};
+
+/** Host warning sheet: resolves true to go ahead, false to cancel. */
+function warn(kind, who) {
+  if (warningsOff()) return Promise.resolve(true);
+  const w = WARNINGS[kind](who);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; resolve(v); sheet.close(); };
+    const sheet = openSheet(w.title, h('div', { class: 'form' },
+      h('p', {}, w.text),
+      h('div', { class: 'warn-actions' },
+        !w.notice && h('button', { class: 'ghost', onclick: () => finish(false) }, 'Cancel'),
+        h('button', { class: 'primary', onclick: () => finish(true) }, w.ok)),
+      h('button', { class: 'link-btn', onclick: () => { localStorage.setItem(WARN_OFF_KEY, '1'); finish(true); toast('Sync warnings turned off'); } },
+        'Don’t show these warnings again')),
+    { onClose: () => { if (!done) { done = true; resolve(!!w.notice); } } }); // closing = cancel
+  });
+}
+
 // ---------- init ----------
 
 export function initPartyUI() {
+  party.warn = warn;
   $('groupBtn').addEventListener('click', openDetails);
   $('groupBar').addEventListener('click', openDetails);
   $('tapBtn').addEventListener('pointerdown', (e) => {

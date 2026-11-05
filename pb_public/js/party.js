@@ -134,11 +134,15 @@ class Party extends EventTarget {
     if (!isHost || rec.state.status !== 'idle') this._applyToMet(rec.state);
     met.enterGroup({
       clock, state: this.state, delta: 0, audible: isHost, isHost, flashOnly: !isHost && this.flashOnly,
-      controls: { play: () => this.primaryAction(), pause: () => this.togglePause(), stop: () => this.stop() },
+      controls: { play: () => this.primaryAction(), pause: () => this.pause(), stop: () => this.stop() },
     });
     this._subscribe();
     this.timers.push(setInterval(() => this._poll(), 4000));
-    if (isHost) { this._loadMembers(); this.timers.push(setInterval(() => this._loadMembers(), 3000)); }
+    if (isHost) {
+      this._loadMembers();
+      this.timers.push(setInterval(() => this._loadMembers(), 3000));
+      this._unwatchOutput = this._watchOutput();
+    }
     else this.timers.push(setInterval(() => this._heartbeat(), 20000));
     wake.request('group');
     this._emit();
@@ -150,6 +154,8 @@ class Party extends EventTarget {
     this.timers.forEach(clearInterval);
     clearTimeout(this._deferTimer);
     this.timers = [];
+    this._unwatchOutput?.();
+    this._unwatchOutput = null;
     this.es?.close();
     this.es = null;
     this.clock?.stop();
@@ -250,7 +256,21 @@ class Party extends EventTarget {
   }
 
   /** Host edited the metronome: share it. Grid changes start on a future downbeat. */
-  _hostEdited() {
+  async _hostEdited() {
+    if (this._editGuard) return; // a warning is open; looked at again once it's answered
+    const m = met.getState();
+    if (this.state.status === 'playing' && (m.bpm !== this.state.bpm || m.beats !== this.state.beats)
+        && this.warn && this.listeningMembers.length) {
+      this._editGuard = true;
+      const ok = await this._guard('tempo');
+      this._editGuard = false;
+      if (!this.record) return;
+      if (!ok) { this._applyToMet(this.state); return; } // put the old tempo back
+    }
+    this._shareEdit();
+  }
+
+  _shareEdit() {
     const m = met.getState();
     const s = { ...this.state };
     for (const k of SOUND_KEYS) s[k] = m[k];
@@ -263,7 +283,7 @@ class Party extends EventTarget {
         } else if (s.prev && s.t0 > now) {
           // A change starts any moment now: let it land, then queue this one.
           clearTimeout(this._deferTimer);
-          this._deferTimer = setTimeout(() => this.record && this._hostEdited(), s.t0 - now + 60);
+          this._deferTimer = setTimeout(() => this.record && this._shareEdit(), s.t0 - now + 60);
           this._push(s);
           return;
         } else {
@@ -281,12 +301,69 @@ class Party extends EventTarget {
   /** Main button. Host: start, then pause / resume (keeps everyone counting). Member: re-sync. */
   primaryAction() {
     if (!this.isHost) return this.resync();
-    return this.state.status === 'playing' ? this.togglePause() : this.togglePlay();
+    return this.state.status === 'playing' ? this.pause() : this.togglePlay();
+  }
+
+  /** Host pause/resume, with a warning if pausing would interrupt someone's sync. */
+  async pause() {
+    if (!this.isHost || this.state.status !== 'playing') return;
+    if (!this.state.mute?.on && !(await this._guard('pause'))) return;
+    if (this.record && this.state.status === 'playing') this.togglePause();
   }
 
   /** Host: stop and reset the beat for everyone. */
-  stop() {
-    if (this.isHost && this.state.status === 'playing') this.togglePlay();
+  async stop() {
+    if (!this.isHost || this.state.status !== 'playing') return;
+    if (!(await this._guard('stop'))) return;
+    if (this.record && this.state.status === 'playing') this.togglePlay();
+  }
+
+  // ---------- host warnings (things that can spoil users' acoustic sync) ----------
+
+  /** Users listening to the host's clicks right now (status fresh within 45 s). */
+  get listeningMembers() {
+    const now = this.clock?.serverNow() ?? Date.now();
+    return this.members.filter((m) => m.status === 'listening' && now - Date.parse(m.updated) < 45000);
+  }
+
+  get syncedMembers() { return this.members.filter((m) => m.status === 'synced'); }
+
+  /** Asks the UI (party.warn) whether to go ahead with a risky host action. */
+  async _guard(kind) {
+    if (!this.isHost || !this.warn) return true;
+    const who = kind === 'output' ? this.syncedMembers : this.listeningMembers;
+    if (!who.length) return true;
+    return this.warn(kind, who);
+  }
+
+  /** Host: notice when this phone's audio output changes (Bluetooth, headphones),
+   * since users synced to the old speaker would then be off by its latency. */
+  _watchOutput() {
+    const ctx = getCtx();
+    const latency = () => (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+    const devices = async () => {
+      try {
+        const d = await navigator.mediaDevices.enumerateDevices();
+        return d.filter((x) => x.kind === 'audiooutput' || x.kind === 'audioinput').map((x) => x.deviceId + x.label).join('|');
+      } catch { return ''; }
+    };
+    let lastLat = latency(), lastDev = null, busy = false;
+    devices().then((d) => { lastDev = d; });
+    const check = async (fromEvent) => {
+      if (busy || !this.isHost || !this.record) return;
+      busy = true;
+      try {
+        if (fromEvent) await new Promise((r) => setTimeout(r, 800)); // let the route settle
+        const lat = latency(), dev = await devices();
+        const changed = Math.abs(lat - lastLat) > 0.015 || (fromEvent && lastDev != null && dev !== lastDev);
+        lastLat = lat; lastDev = dev;
+        if (changed) await this._guard('output');
+      } finally { busy = false; }
+    };
+    const onChange = () => check(true);
+    navigator.mediaDevices?.addEventListener?.('devicechange', onChange);
+    const t = setInterval(() => check(false), 5000);
+    return () => { clearInterval(t); navigator.mediaDevices?.removeEventListener?.('devicechange', onChange); };
   }
 
   togglePlay() {
@@ -312,8 +389,10 @@ class Party extends EventTarget {
   }
 
   /** Host: start/stop the shared tuning drone. note = { pc, fifth } or null. */
-  setDrone(note) {
+  async setDrone(note) {
     if (!this.isHost) return;
+    if (note && !this.droneOn && !(await this._guard('drone'))) return;
+    if (!this.record) return;
     const drone = note ? { on: true, pc: note.pc, fifth: !!note.fifth } : { ...(this.state.drone || {}), on: false };
     this._push({ ...this.state, drone, a4: settings.a4 }, { immediate: true });
   }
@@ -463,6 +542,7 @@ class Party extends EventTarget {
     if (this.state.status !== 'playing') { this._setSync({ status: 'waiting' }); return; }
     this.syncing = true;
     this._setSync({ status: 'listening' });
+    this._updateMember({ status: 'listening' }); // lets the host warn before interrupting
     let result = null, error = null;
     try {
       await acoustic.openMic();

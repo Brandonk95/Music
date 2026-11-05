@@ -131,6 +131,10 @@ While it runs, the host's controls work for everyone:
 - **❚❚ Pause** (the big button once playing): every phone goes silent on the next beat but keeps
   counting, so you can stop and talk, then **▶** comes back in exactly on the beat. Nobody re-syncs.
 - **Stop** (where Tap usually is) ends the beat and resets; **▶** starts again after a short count-off.
+- **Sync warnings (host):** if a user is syncing to your clicks right now, pausing, stopping,
+  changing tempo/meter or starting the drone asks first (OK / Cancel / Don't show again). If your
+  phone switches speakers (Bluetooth, headphones) while users are synced, you're told they may be
+  off. Turn warnings back on in the group sheet.
 - Tempo, meter, accents, subdivision and sound changes go to everyone. Tempo and meter changes
   start on the next downbeat, so the grid never jumps.
 - **Tuning drone:** the host picks a concert pitch (B♭, F, E♭, A♭, C, G, D, A), optionally with a
