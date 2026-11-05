@@ -94,11 +94,13 @@ function renderControls() {
   }
   const playing = party.state?.status === 'playing';
   if (party.isHost) {
-    $('playIcon').textContent = playing ? '■' : '▶';
-    $('playBtn').classList.toggle('on', playing);
-    $('playBtn').setAttribute('aria-label', playing ? 'Stop for everyone' : 'Start for everyone');
-    $('tapBtn').textContent = party.paused ? 'Resume' : 'Pause';
-    $('tapBtn').classList.toggle('on', party.paused);
+    // Pause is the main button: it keeps everyone counting, so coming back in is instant.
+    const paused = playing && party.paused;
+    $('playIcon').textContent = playing && !paused ? '❚❚' : '▶';
+    $('playBtn').classList.toggle('on', playing && !paused);
+    $('playBtn').setAttribute('aria-label', !playing ? 'Start for everyone' : paused ? 'Resume for everyone' : 'Pause for everyone');
+    $('tapBtn').textContent = 'Stop';
+    $('tapBtn').classList.remove('on');
     $('tapBtn').disabled = !playing;
   } else {
     const st = party.sync.status;
@@ -178,7 +180,7 @@ function drawDetails(body) {
           }, '✕'))),
         !party.members.length && h('p', { class: 'hint' }, 'Nobody yet.')),
       h('p', { class: 'hint' },
-        '▶ starts everyone after a short count-off. Pause silences every phone but keeps counting, so you can talk and come back in on the beat. ■ stops and resets.',
+        '▶ starts everyone after a short count-off. The big button then pauses: every phone goes silent but keeps counting, so you can talk and ▶ comes back in on the beat. Stop (beside it) ends the beat and resets.',
         ' Tempo or meter changes start on the next downbeat — nobody needs to re-sync.'),
       h('button', { class: 'ghost wide danger', onclick: async () => {
         if (!confirm('End the group for everyone?')) return;
@@ -238,7 +240,7 @@ export function initPartyUI() {
     if (!party.active) return;
     e.stopImmediatePropagation();
     e.preventDefault();
-    if (party.isHost) party.togglePause(); else openDetails();
+    if (party.isHost) party.stop(); else openDetails();
   }, true);
 
   let lastSync = null;

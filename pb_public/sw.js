@@ -21,7 +21,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_/')) return;
+  if (/^\/(api|_|admin)(\/|$)/.test(url.pathname)) return; // server, dashboard, /admin redirect
   e.respondWith(
     fetch(e.request, { cache: 'no-cache' }) // revalidate: never mix old and new app files
       .then((res) => {

@@ -430,6 +430,7 @@ export function initMetronome() {
     if (!$('view-metronome').classList.contains('active') || e.target.closest('input, textarea, .sheet')) return;
     if (e.code === 'Space') { e.preventDefault(); playPressed(); }
     if (e.key.toLowerCase() === 'p' && met.group?.isHost) met.group.controls.pause();
+    if (e.key.toLowerCase() === 's' && met.group?.isHost) met.group.controls.stop();
     if (met.group && !met.group.isHost) return; // members follow the host's tempo
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') bumpBpm(e.shiftKey ? 10 : 1);
     if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') bumpBpm(e.shiftKey ? -10 : -1);

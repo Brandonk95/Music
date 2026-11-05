@@ -134,7 +134,7 @@ class Party extends EventTarget {
     if (!isHost || rec.state.status !== 'idle') this._applyToMet(rec.state);
     met.enterGroup({
       clock, state: this.state, delta: 0, audible: isHost, isHost, flashOnly: !isHost && this.flashOnly,
-      controls: { play: () => this.primaryAction(), pause: () => this.togglePause() },
+      controls: { play: () => this.primaryAction(), pause: () => this.togglePause(), stop: () => this.stop() },
     });
     this._subscribe();
     this.timers.push(setInterval(() => this._poll(), 4000));
@@ -278,9 +278,15 @@ class Party extends EventTarget {
     this._push(s);
   }
 
+  /** Main button. Host: start, then pause / resume (keeps everyone counting). Member: re-sync. */
   primaryAction() {
-    if (this.isHost) return this.togglePlay();
-    return this.resync();
+    if (!this.isHost) return this.resync();
+    return this.state.status === 'playing' ? this.togglePause() : this.togglePlay();
+  }
+
+  /** Host: stop and reset the beat for everyone. */
+  stop() {
+    if (this.isHost && this.state.status === 'playing') this.togglePlay();
   }
 
   togglePlay() {

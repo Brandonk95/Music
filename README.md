@@ -33,6 +33,11 @@ servers). The app is on port **8090**. For the PocketBase dashboard at `/_/`, ei
 `PB_ADMIN_EMAIL` / `PB_ADMIN_PASSWORD` in the compose file (or CasaOS app settings), or open the
 one-time setup link printed in the container logs.
 
+`/admin` redirects to the dashboard. Admin sign-in is rate limited: at most 3 attempts per 10 seconds,
+and 5 wrong passwords from one IP in 15 minutes locks that IP out for 15 minutes. 25 wrong passwords
+from anywhere pauses all admin sign-ins for 15 minutes. Behind Cloudflare the visitor's IP is read from
+`CF-Connecting-IP` (Dashboard → Settings → Application → trusted proxy headers).
+
 The updater mounts the Docker socket, and it only touches containers labelled with the
 `tempotune` scope.
 
@@ -123,9 +128,9 @@ The host needs an account; everyone else can join as a guest with just their nam
 
 While it runs, the host's controls work for everyone:
 
-- **Pause** (the Tap button): every phone goes silent on the next beat but keeps counting, so you
-  can stop and talk, then **Resume** comes back in exactly on the beat. Nobody re-syncs.
-- **■** stops and resets; **▶** starts again after a short count-off. Still no re-sync.
+- **❚❚ Pause** (the big button once playing): every phone goes silent on the next beat but keeps
+  counting, so you can stop and talk, then **▶** comes back in exactly on the beat. Nobody re-syncs.
+- **Stop** (where Tap usually is) ends the beat and resets; **▶** starts again after a short count-off.
 - Tempo, meter, accents, subdivision and sound changes go to everyone. Tempo and meter changes
   start on the next downbeat, so the grid never jumps.
 - **Tuning drone:** the host picks a concert pitch (B♭, F, E♭, A♭, C, G, D, A), optionally with a
@@ -177,7 +182,7 @@ Notes:
 **General**: works offline once loaded, can be installed to the home screen, and syncs to your
 account when signed in. Without an account, everything is saved on the device.
 
-Keyboard (desktop): Space play/stop, ←/→ or ↑/↓ change tempo (Shift = ±10), T tap, P pause (group host).
+Keyboard (desktop): Space play/stop, ←/→ or ↑/↓ change tempo (Shift = ±10), T tap, P pause, S stop (group host).
 
 ## Layout
 
