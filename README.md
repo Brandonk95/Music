@@ -196,6 +196,7 @@ pb_public/        the web app (PocketBase serves this folder)
   js/tuner.js     tuner UI
   js/metronome-engine.js  lookahead audio scheduler
   js/metronome.js metronome UI, presets, setlists
+  js/fit.js       keeps Tuner and Metronome on one screen (no scrolling)
   js/store.js     local + PocketBase storage
   js/clock.js     server-clock sync for the group metronome
   js/acoustic.js  mic onset timing (acoustic sync)

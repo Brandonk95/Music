@@ -8,6 +8,7 @@ import { tone } from './tone.js';
 import { applyProfile, loadLocalProfile } from './personalize.js';
 import { toast } from './ui.js';
 import { initInstall } from './install.js';
+import { initFit } from './fit.js';
 
 const renderSettings = initSettingsView();
 initTuner();
@@ -34,6 +35,7 @@ showTab(joinCode ? 'metronome' : ['tuner', 'metronome'].includes(startTab) ? sta
   : settings.tab === 'settings' ? 'settings' : settings.tab || 'tuner');
 if (joinCode) openJoinLink(joinCode);
 initInstall();
+initFit();
 
 // Free the mic when the app is backgrounded.
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopTuner(); });

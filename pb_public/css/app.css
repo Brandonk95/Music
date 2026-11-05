@@ -348,3 +348,98 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 32px; }
 .warn-actions { display: flex; gap: 10px; margin-top: 4px; }
 .warn-actions button { flex: 1; }
 .link-btn { background: none; border: 0; color: var(--muted, #9aa); text-decoration: underline; padding: 12px 0 0; font: inherit; font-size: 14px; cursor: pointer; width: 100%; }
+
+/* ---------- fit to screen: Tuner and Metronome never scroll ----------
+   Sizes follow the screen height (dvh) as well as its width; if things still
+   don't fit (notch, enlarged text, group/setlist bars), js/fit.js adds .fit-1..3
+   to the view, each step more compact. The page itself never scrolls. */
+html, body { overflow: hidden; overscroll-behavior: none; }
+.view:not(.scroll) { overflow: hidden; }
+.note-display .note { font-size: clamp(52px, min(24vw, 15dvh), 120px); }
+.gauge { height: clamp(70px, 26dvh, 190px); flex: 0 1 auto; min-height: 60px; }
+.beats { height: clamp(60px, 15dvh, 120px); }
+.bpm { font-size: clamp(56px, min(26vw, 15dvh), 128px); }
+.play { width: clamp(60px, 11dvh, 84px); height: clamp(60px, 11dvh, 84px); }
+
+.fit-1 .tempo-name, .fit-1 .history { display: none; }
+.fit-1 .bpm-block { padding-top: 4px; }
+.fit-1 .count-in { margin-top: 16px; }
+.fit-1 .beats { padding-top: 8px; height: clamp(56px, 12dvh, 100px); }
+.fit-1 .opt { min-height: 54px; padding: 6px 4px; }
+.fit-1 .concert-line { min-height: 0; }
+.fit-1 .strings { padding-top: 6px; min-height: 0; }
+.fit-1 .actions { padding-top: 6px; }
+
+.fit-2 .bpm-unit { display: none; }
+.fit-2 .bpm { font-size: clamp(48px, min(22vw, 11dvh), 104px); }
+.fit-2 .round { width: 46px; height: 46px; font-size: 24px; }
+.fit-2 .beats { height: clamp(48px, 9dvh, 80px); padding-top: 4px; }
+.fit-2 .count-in { margin-top: 14px; min-height: 1.2em; font-size: 14px; }
+.fit-2 .opt { min-height: 42px; padding: 4px; }
+.fit-2 .opt small { display: none; }
+.fit-2 .play { width: 58px; height: 58px; font-size: 26px; }
+.fit-2 .big-chip { min-height: 44px; }
+.fit-2 .topbar { min-height: 38px; }
+.fit-2 .topbar .chip { min-height: 36px; padding: 6px 12px; }
+.fit-2 .group-bar, .fit-2 .setlist-bar { margin-top: 4px; min-height: 38px; padding-top: 4px; padding-bottom: 4px; }
+.fit-2 .note-display .note { font-size: clamp(44px, min(20vw, 11dvh), 96px); }
+.fit-2 .note-display .hint-line { font-size: 15px; min-height: 20px; margin-top: 2px; }
+.fit-2 .gauge { min-height: 50px; }
+.fit-2 .primary.big { min-height: 42px; padding: 8px 18px; }
+
+.fit-3 { padding-top: calc(4px + var(--safe-t)); padding-bottom: 4px; }
+.fit-3 .bpm-slider { height: 24px; margin: 0; }
+.fit-3 .bpm { font-size: clamp(40px, min(18vw, 9dvh), 80px); }
+.fit-3 .beats { height: 40px; }
+.fit-3 .beat .beat-num { display: none; }
+.fit-3 .count-in { margin-top: 2px; }
+.fit-3 .opts { gap: 6px; margin-top: 4px; }
+.fit-3 .opt { min-height: 36px; }
+.fit-3 .opt b { font-size: 14px; }
+.fit-3 .play { width: 50px; height: 50px; font-size: 22px; box-shadow: none; }
+.fit-3 .big-chip, .fit-3 .actions .chip { min-height: 38px; padding: 6px 12px; }
+.fit-3 .actions { padding-top: 4px; }
+.fit-3 .note-display .note { font-size: clamp(36px, min(16vw, 9dvh), 72px); }
+.fit-3 .note-display .concert-line { display: none; }
+.fit-3 .gauge { min-height: 40px; }
+.fit-3 .string-btn { max-width: 40px; }
+.fit-3 .primary.big { min-height: 38px; padding: 6px 16px; }
+
+/* Phones on their side: two columns instead of one tall stack. */
+@media (orientation: landscape) and (max-height: 540px) {
+  :root { --tabbar-h: 46px; }
+  .tabbar button { flex-direction: row; gap: 6px; font-size: 13px; }
+  .tabbar button .ti { font-size: 18px; }
+  .view { max-width: none; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); padding-top: calc(6px + var(--safe-t)); padding-bottom: 6px; }
+  #view-metronome.active {
+    display: grid; column-gap: 24px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "top top" "group group" "setlist setlist" "beats bpm" "count bpm" "opts actions";
+  }
+  #view-metronome > .topbar { grid-area: top; }
+  #groupBar { grid-area: group; }
+  #setlistBar { grid-area: setlist; }
+  #beats { grid-area: beats; height: auto; min-height: 40px; align-self: stretch; }
+  #countInLabel { grid-area: count; margin-top: 18px; }
+  #view-metronome .bpm-block { grid-area: bpm; padding-top: 0; }
+  #view-metronome .opts { grid-area: opts; align-self: end; }
+  #view-metronome .actions { grid-area: actions; align-self: end; }
+  #view-metronome .tempo-name { display: none; }
+  #view-tuner.active {
+    display: grid; column-gap: 24px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "top top" "main strings" "main actions";
+  }
+  #view-tuner > .topbar { grid-area: top; }
+  #view-tuner .tuner-main { grid-area: main; }
+  #view-tuner .strings { grid-area: strings; align-self: center; }
+  #view-tuner .actions { grid-area: actions; }
+  #view-tuner .history { display: none; }
+  #view-tuner .gauge { flex: 1 1 0; height: auto; max-height: none; }
+  #view-tuner .strings.empty + .actions { align-self: center; }
+  .note-display .note { font-size: clamp(44px, 18dvh, 96px); }
+  .bpm { font-size: clamp(48px, 18dvh, 110px); }
+  .play { width: clamp(52px, 16dvh, 76px); height: clamp(52px, 16dvh, 76px); }
+}
