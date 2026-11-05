@@ -21,3 +21,13 @@ cronAdd("tempotune_cleanup_parties", "17 * * * *", () => {
     }
   }
 });
+
+// App files: always check with the server before using a cached copy, so a
+// phone never runs a new page with old scripts after an update.
+routerUse((e) => {
+  const path = e.request.url.path;
+  if (!path.startsWith("/api/") && !path.startsWith("/_/")) {
+    e.response.header().set("Cache-Control", "no-cache");
+  }
+  return e.next();
+});

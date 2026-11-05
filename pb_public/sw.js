@@ -1,6 +1,6 @@
 // Offline support: network-first for app files (so updates show immediately),
 // falling back to the cache when offline. API calls are never cached here.
-const CACHE = 'tempotune-v4';
+const CACHE = 'tempotune-v5';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/audio.js', 'js/metronome.js', 'js/metronome-engine.js', 'js/notes.js', 'js/pitch.js',
@@ -23,7 +23,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_/')) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' }) // revalidate: never mix old and new app files
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
         return res;
