@@ -5,7 +5,7 @@ name: tempotune
 
 services:
   tempotune:
-    image: ghcr.io/brandonk95/tempotune:latest
+    image: ghcr.io/brandonk95/music:latest
     container_name: tempotune
     restart: unless-stopped
     environment:
@@ -82,7 +82,7 @@ x-casaos:
       instruments), just intonation, drones and tuning notes, plus a metronome with accents,
       subdivisions, count-ins, drill set counts, speed/gap trainers, presets and setlists.
       Install it to your phone's home screen. Updates automatically from GitHub.
-  icon: https://raw.githubusercontent.com/Brandonk95/tempotune/main/pb_public/icons/icon-512.png
+  icon: https://raw.githubusercontent.com/Brandonk95/Music/main/pb_public/icons/icon-512.png
   index: /
   port_map: "8090"
   scheme: http

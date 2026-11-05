@@ -6,19 +6,19 @@ An ad-free tuner and metronome for your phone. It's a PWA (installable web app) 
 ## Run it on a server (Docker / CasaOS)
 
 How updates flow: push to `main` on GitHub → the **Build image** GitHub Action publishes
-`ghcr.io/brandonk95/tempotune:latest` (amd64 + arm64) → the `tempotune-updater` container on your
+`ghcr.io/brandonk95/music:latest` (amd64 + arm64) → the `tempotune-updater` container on your
 server checks every 5 minutes and swaps in the new version. Your data in `pb_data` is kept.
 
-**One-time GitHub setup:** push this folder to `github.com/Brandonk95/tempotune`. After the first
-Action run finishes, open the package (your GitHub profile → Packages → tempotune → Package
-settings) and make sure its visibility is **Public**, so the server can pull it without logging in.
-If you use a different repo name, update `image:` and `icon:` in both compose files.
+**One-time GitHub setup:** the code lives at `github.com/Brandonk95/Music`. Open the package (your
+GitHub profile → Packages → music → Package settings) and make sure its visibility is **Public**, so
+the server can pull it without logging in. If you rename the repo, update `image:` and `icon:` in
+both compose files.
 
 **CasaOS, option A (import):** App Store → **Custom Install** → Import → paste
 [docker-compose.yml](docker-compose.yml) → Install.
 
 **CasaOS, option B (app store source):** App Store → More apps → add this source URL:
-`https://github.com/Brandonk95/tempotune/archive/refs/heads/main.zip`. TempoTune then shows up in the
+`https://github.com/Brandonk95/Music/archive/refs/heads/main.zip`. TempoTune then shows up in the
 store, and CasaOS refreshes it from GitHub. It reads [Apps/TempoTune/docker-compose.yml](Apps/TempoTune/docker-compose.yml),
 which must stay identical to the root compose file (the Action checks this).
 
@@ -60,6 +60,27 @@ tailscale serve --bg 8090
 Then open the `https://<server>.<tailnet>.ts.net` URL on your phone (with Tailscale running on the
 phone too) and choose **Add to Home Screen**. A reverse proxy with a certificate (Caddy, Nginx
 Proxy Manager, Cloudflare Tunnel) works too.
+
+## Personalized setup
+
+Creating an account opens an optional questionnaire (skippable; retake anytime under
+**Settings → Your setup**, with or without an account). It asks:
+- whether you play, direct, or teach
+- your instrument
+- your groups (marching, concert, orchestra, jazz, pep, rock)
+- your experience level
+- your group's A (440/442)
+- a few extras
+
+It then sets things up for you. For example, B♭ clarinet in marching band gets:
+- the tuner showing written notes
+- a loud cowbell metronome with an 8-count count-in
+- screen flash on the beat
+
+Beginners get a relaxed ±5¢ in-tune range and a 72 BPM start. Jazz gets hi-hat on 2 and 4 with
+swing. Directors get concert-pitch chromatic tuning with just-intonation hints and drone 5ths.
+Answers are saved to the account (`profile` field on `users`), so signing in on a new phone
+applies the same setup automatically.
 
 ## Band & orchestra
 

@@ -81,7 +81,8 @@ export function applyProfile(p) {
   setSetting('playOnTap', !BAND_IDS.has(instrument));
 
   // --- metronome ---
-  const state = met.getState();
+  // Start from a clean 4/4 so a previous profile's feel (e.g. jazz swing) doesn't linger.
+  const state = { ...met.getState(), bpm: 120, beats: 4, noteValue: 4, accents: [3, 2, 2, 2], subdivision: '1', countIn: 0 };
   let sound = 'click';
   if (primary === 'marching') {
     Object.assign(state, { countIn: 8, bpm: 120 });
