@@ -115,7 +115,8 @@ Play one metronome on everyone's phone, in sync, without everybody fiddling with
 The host needs an account; everyone else can join as a guest with just their name.
 
 1. The section leader opens **Metronome → 👥 Group → Start a group** and reads out the 6-character code.
-2. Everyone else taps **👥 Group**, enters their name (if not signed in) and the code, and taps **Join**. Each phone first plays a few
+2. Everyone else scans the QR code in the host's group sheet with their camera (or taps **👥 Group**
+   and types the code), enters their name if not signed in, and taps **Join**. Each phone first plays a few
    quick clicks to measure its own speaker delay (keep quiet for a second).
 3. The host presses **▶**. Everyone holds their phone near the host's for a few beats: each phone
    listens, locks onto the host's clicks, then joins in. The group bar turns green ("In sync ±1 ms").
@@ -127,6 +128,10 @@ While it runs, the host's controls work for everyone:
 - **■** stops and resets; **▶** starts again after a short count-off. Still no re-sync.
 - Tempo, meter, accents, subdivision and sound changes go to everyone. Tempo and meter changes
   start on the next downbeat, so the grid never jumps.
+- **Tuning drone:** the host picks a concert pitch (B♭, F, E♭, A♭, C, G, D, A), optionally with a
+  5th, and every phone plays it, tuned to the host's A4. It keeps going until the host turns it off.
+- **Flash only:** any user can switch their own phone to flash and vibrate without clicks, from the
+  group sheet.
 - Users' tempo controls are locked while they're in a group. The host can remove a user with ✕
   in the group sheet's user list (they can rejoin with the code). **End group** in the group sheet
   closes it for everyone, and their own settings come back.

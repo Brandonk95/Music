@@ -253,7 +253,7 @@ export class Metronome extends EventTarget {
     const level = this.accents[ev.beat] ?? (ev.beat === 0 ? 3 : 2);
     const paused = isMutedAt(s, ev.ts);
     const silent = level === 0 || paused || !g.audible || (isMain && !!this.pattern.silentMain);
-    if (!silent) {
+    if (!silent && !g.flashOnly) {
       if (isMain) this._play(level === 3 ? this.soundSet.accent : this.soundSet.normal, t, (level === 3 ? 1 : level === 2 ? 0.72 : 0.32) * this.volume);
       else {
         const gain = this.subVolume * this.volume * (level === 1 ? 0.6 : 1);
@@ -262,7 +262,7 @@ export class Metronome extends EventTarget {
     }
     this.events.push({
       time: t, ts: ev.ts, beat: ev.beat, sub: ev.sub, main: isMain, level, silent,
-      counting: false, bar: ev.bar, count: 0, countIn: 0, paused, unsynced: !g.audible,
+      counting: false, bar: ev.bar, count: 0, countIn: 0, paused, unsynced: !g.audible, forceFlash: !!g.flashOnly,
     });
     // Nobody drains these while the screen is off; don't let a long rehearsal pile them up.
     if (this.events.length > 512) this.events.splice(0, this.events.length - 256);

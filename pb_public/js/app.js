@@ -1,7 +1,7 @@
 import { settings, setSetting } from './settings.js';
 import { initTuner, stopTuner } from './tuner.js';
 import { initMetronome } from './metronome.js';
-import { initPartyUI } from './party-ui.js';
+import { initPartyUI, openJoinLink } from './party-ui.js';
 import { initSettingsView } from './settings-view.js';
 import { store } from './store.js';
 import { tone } from './tone.js';
@@ -25,10 +25,14 @@ function showTab(name) {
 
 document.querySelectorAll('.tabbar button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 // Home-screen shortcuts open a specific tab (?tab=tuner / ?tab=metronome).
-const startTab = new URLSearchParams(location.search).get('tab');
-if (startTab) history.replaceState(null, '', location.pathname);
-showTab(['tuner', 'metronome'].includes(startTab) ? startTab
+// Join links (?join=CODE, e.g. from the group QR code) open the join sheet.
+const params = new URLSearchParams(location.search);
+const startTab = params.get('tab');
+const joinCode = params.get('join');
+if (startTab || joinCode) history.replaceState(null, '', location.pathname);
+showTab(joinCode ? 'metronome' : ['tuner', 'metronome'].includes(startTab) ? startTab
   : settings.tab === 'settings' ? 'settings' : settings.tab || 'tuner');
+if (joinCode) openJoinLink(joinCode);
 initInstall();
 
 // Free the mic when the app is backgrounded.

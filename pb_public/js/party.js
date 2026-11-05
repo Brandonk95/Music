@@ -16,6 +16,8 @@ import { getSoundSet } from './sounds.js';
 import { getCtx, unlock } from './audio.js';
 import { wake } from './wakelock.js';
 import * as acoustic from './acoustic.js';
+import { sustain } from './tone.js';
+import { settings } from './settings.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LEAD_START = 2000; // ms between pressing play and the first beat
@@ -23,6 +25,11 @@ const LEAD_CHANGE = 900; // tempo/meter changes start on a downbeat at least thi
 const LEAD_MUTE = 300; // pause/resume on a beat at least this far ahead
 const LOOPBACK_KEY = 'tt.loopback';
 const SOUND_KEYS = ['accents', 'subdivision', 'sound', 'noteValue', 'volume', 'subVolume'];
+const FLASH_ONLY_KEY = 'tt.groupFlashOnly';
+
+/** Concert-pitch notes offered for the group tuning drone (pitch class, C = 0). */
+export const DRONE_NOTES = [[10, 'B♭'], [5, 'F'], [3, 'E♭'], [8, 'A♭'], [0, 'C'], [7, 'G'], [2, 'D'], [9, 'A']];
+export const droneName = (pc) => (DRONE_NOTES.find(([p]) => p === pc) || [pc, '?'])[1];
 
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 const memberName = () => store.user?.name || (store.user?.email || 'User').split('@')[0];
@@ -126,7 +133,7 @@ class Party extends EventTarget {
     this.sync = isHost ? { status: 'host' } : { status: 'idle' };
     if (!isHost || rec.state.status !== 'idle') this._applyToMet(rec.state);
     met.enterGroup({
-      clock, state: this.state, delta: 0, audible: isHost, isHost,
+      clock, state: this.state, delta: 0, audible: isHost, isHost, flashOnly: !isHost && this.flashOnly,
       controls: { play: () => this.primaryAction(), pause: () => this.togglePause() },
     });
     this._subscribe();
@@ -152,6 +159,7 @@ class Party extends EventTarget {
     if (this.savedMet) met.setState(this.savedMet);
     this._applying = false;
     wake.release('group');
+    this._applyDrone(null);
     this.record = null;
     this.state = null;
     this.members = [];
@@ -212,6 +220,7 @@ class Party extends EventTarget {
     if (!this.isHost && this.member && state.kicked?.includes(this.member.id)) return this._ended({ kicked: true });
     this.state = state;
     if (met.group) met.group.state = state;
+    this._applyDrone(state);
     if (!this.isHost) this._applyToMet(state);
     if (!this.isHost) this._maybeSync();
     this._emit();
@@ -294,6 +303,43 @@ class Party extends EventTarget {
     const target = s.mute ? !s.mute.on : true;
     const at = nextBeatAt(s, this.clock.serverNow() + LEAD_MUTE);
     this._push({ ...s, mute: { on: target, at } }, { immediate: true });
+  }
+
+  /** Host: start/stop the shared tuning drone. note = { pc, fifth } or null. */
+  setDrone(note) {
+    if (!this.isHost) return;
+    const drone = note ? { on: true, pc: note.pc, fifth: !!note.fifth } : { ...(this.state.drone || {}), on: false };
+    this._push({ ...this.state, drone, a4: settings.a4 }, { immediate: true });
+  }
+
+  /** Plays the drone described by the party state on this phone (C4–B4, tuned to the host's A4). */
+  _applyDrone(s) {
+    const d = s?.drone?.on ? s.drone : null;
+    const a4 = s?.a4 || 440;
+    const key = d ? `${d.pc}:${d.fifth ? 1 : 0}:${a4}` : null;
+    if (key === this._droneKey) return;
+    this._drone?.stop();
+    this._drone = null;
+    this._droneKey = key;
+    if (!d) return;
+    const midi = 60 + d.pc;
+    this._drone = sustain(a4 * 2 ** ((midi - 69) / 12), { fifth: d.fifth, timbre: 'soft' });
+  }
+
+  /** Host: toggle the drone's 5th (remembered even while the drone is off). */
+  setDroneFifth(fifth) {
+    if (!this.isHost) return;
+    this._push({ ...this.state, drone: { ...(this.state.drone || { on: false, pc: 10 }), fifth: !!fifth }, a4: settings.a4 }, { immediate: true });
+  }
+
+  get droneOn() { return !!this.state?.drone?.on; }
+
+  /** Member option: show the beat as flash + vibration, no click sound. Saved on the device. */
+  get flashOnly() { return localStorage.getItem(FLASH_ONLY_KEY) === '1'; }
+  set flashOnly(on) {
+    localStorage.setItem(FLASH_ONLY_KEY, on ? '1' : '0');
+    if (met.group && !this.isHost) met.group.flashOnly = on;
+    this._emit();
   }
 
   get paused() {

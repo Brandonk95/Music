@@ -99,13 +99,13 @@ function loop() {
       el.classList.toggle('counting', ev.counting);
     }
     if (!ev.silent) {
-      if (settings.flash) {
+      if (settings.flash || ev.forceFlash) {
         const f = $('flash');
         f.className = ev.level === 3 ? 'flash strong' : 'flash';
         void f.offsetWidth; // restart animation
         f.classList.add('go');
       }
-      if (settings.vibrate) navigator.vibrate?.(ev.level === 3 ? 35 : 15);
+      if (settings.vibrate || ev.forceFlash) navigator.vibrate?.(ev.level === 3 ? 35 : 15);
     }
     const status = $('countInLabel');
     status.textContent = met.group

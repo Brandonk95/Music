@@ -59,6 +59,16 @@ function voice(freq, timbre, duration) {
   };
 }
 
+/**
+ * A sustained tone that's independent of the tuner's own pitch pipe (used for
+ * the group metronome's shared drone). Returns { stop }.
+ */
+export function sustain(freq, { fifth = false, timbre = 'soft' } = {}) {
+  const voices = [voice(freq, timbre, 0)];
+  if (fifth) voices.push(voice(freq * 1.5, timbre, 0));
+  return { stop: () => voices.forEach((v) => v.stop()) };
+}
+
 export const tone = {
   /** One-shot note, e.g. when tapping a string. */
   pluck(freq) {
