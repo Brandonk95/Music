@@ -127,7 +127,8 @@ While it runs, the host's controls work for everyone:
 - **■** stops and resets; **▶** starts again after a short count-off. Still no re-sync.
 - Tempo, meter, accents, subdivision and sound changes go to everyone. Tempo and meter changes
   start on the next downbeat, so the grid never jumps.
-- Players' tempo controls are locked while they're in a group. **End group** in the group sheet
+- Users' tempo controls are locked while they're in a group. The host can remove a user with ✕
+  in the group sheet's user list (they can rejoin with the code). **End group** in the group sheet
   closes it for everyone, and their own settings come back.
 
 How it works: every phone keeps a clock locked to the server's (`/api/time`), and the host

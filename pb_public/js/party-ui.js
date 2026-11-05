@@ -22,7 +22,7 @@ let detailsSheet = null;
 function syncLine() {
   if (party.isHost) {
     const n = party.members.length;
-    return `Host · ${n} ${n === 1 ? 'player' : 'players'}`;
+    return `Host · ${n} ${n === 1 ? 'user' : 'users'}`;
   }
   const s = party.sync;
   let text = SYNC_TEXT[s.status] || '';
@@ -126,12 +126,16 @@ function drawDetails(body) {
   ];
   if (party.isHost) {
     fill(body, ...common,
-      h('h3', {}, `Players (${party.members.length})`),
+      h('h3', {}, `Users (${party.members.length})`),
       h('div', { class: 'list' },
         party.members.map((m) => h('div', { class: 'list-row member' },
-          h('span', { class: 'member-name' }, m.name || 'Player'),
+          h('span', { class: 'member-name' }, m.name || 'User'),
           h('span', { class: `member-status s-${m.status}` }, MEMBER_TEXT[m.status] || m.status,
-            m.status === 'synced' && m.syncMs ? ` ±${Math.max(1, Math.round(m.syncMs))} ms` : ''))),
+            m.status === 'synced' && m.syncMs ? ` ±${Math.max(1, Math.round(m.syncMs))} ms` : ''),
+          h('button', {
+            class: 'icon-btn danger', 'aria-label': `Remove ${m.name || 'user'}`, title: 'Remove from group',
+            onclick: () => { if (confirm(`Remove ${m.name || 'this user'} from the group?`)) party.kick(m.id); },
+          }, '✕'))),
         !party.members.length && h('p', { class: 'hint' }, 'Nobody yet.')),
       h('p', { class: 'hint' },
         '▶ starts everyone after a short count-off. Pause silences every phone but keeps counting, so you can talk and come back in on the beat. ■ stops and resets.',
@@ -197,7 +201,10 @@ export function initPartyUI() {
     }
   });
   party.addEventListener('members', () => { renderBar(); refreshDetails(); });
-  party.addEventListener('ended', (e) => { if (!e.detail.wasHost) toast('The host ended the group'); });
+  party.addEventListener('ended', (e) => {
+    if (e.detail.kicked) toast('The host removed you from the group');
+    else if (!e.detail.wasHost) toast('The host ended the group');
+  });
   party.addEventListener('error', (e) => toast(e.detail));
   met.addEventListener('state', renderControls);
   met.addEventListener('change', () => party.active && renderControls());

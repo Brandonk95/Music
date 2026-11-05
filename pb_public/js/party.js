@@ -25,7 +25,7 @@ const LOOPBACK_KEY = 'tt.loopback';
 const SOUND_KEYS = ['accents', 'subdivision', 'sound', 'noteValue', 'volume', 'subVolume'];
 
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
-const memberName = () => store.user?.name || (store.user?.email || 'Player').split('@')[0];
+const memberName = () => store.user?.name || (store.user?.email || 'User').split('@')[0];
 const GUEST_NAME_KEY = 'tt.guestName';
 const KEY_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const makeGuestKey = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => KEY_CHARS[b % KEY_CHARS.length]).join('');
@@ -200,14 +200,16 @@ class Party extends EventTarget {
     this._setState(rec.state);
   }
 
-  _ended() {
+  _ended({ kicked = false } = {}) {
     if (!this.record) return;
     const wasHost = this.isHost;
     this.leave();
-    this.dispatchEvent(new CustomEvent('ended', { detail: { wasHost } }));
+    this.dispatchEvent(new CustomEvent('ended', { detail: { wasHost, kicked } }));
   }
 
   _setState(state) {
+    // The host removed us: the record is deleted and our id is listed in state.kicked.
+    if (!this.isHost && this.member && state.kicked?.includes(this.member.id)) return this._ended({ kicked: true });
     this.state = state;
     if (met.group) met.group.state = state;
     if (!this.isHost) this._applyToMet(state);
@@ -303,6 +305,18 @@ class Party extends EventTarget {
   }
 
   // ---------- members ----------
+
+  /** Host: remove a user. They drop out at once (via state.kicked) and their record is deleted. */
+  async kick(memberId) {
+    if (!this.isHost) return;
+    const kicked = [...(this.state.kicked || []).filter((id) => id !== memberId), memberId].slice(-50);
+    this._push({ ...this.state, kicked }, { immediate: true });
+    this.members = this.members.filter((m) => m.id !== memberId);
+    this.dispatchEvent(new Event('members'));
+    try {
+      await store.api(`/api/collections/party_members/records/${memberId}`, { method: 'DELETE' });
+    } catch (e) { if (e.status !== 404) this.dispatchEvent(new CustomEvent('error', { detail: e.message })); }
+  }
 
   async _loadMembers() {
     try {
