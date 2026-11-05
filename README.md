@@ -36,6 +36,10 @@ one-time setup link printed in the container logs.
 The updater mounts the Docker socket, and it only touches containers labelled with the
 `tempotune` scope.
 
+Behind Cloudflare or another CDN: each build gives the app's scripts new URLs (`?v=<commit>`),
+so cached copies can't go stale after an update. Leave Rocket Loader off, since it rewrites
+the app's module scripts.
+
 ## Run it on Windows (no Docker)
 
 ```powershell

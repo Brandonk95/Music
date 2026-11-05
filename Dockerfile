@@ -13,6 +13,10 @@ COPY pb_migrations /pb/pb_migrations
 COPY pb_hooks /pb/pb_hooks
 COPY pb_public /pb/pb_public
 COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
+COPY --chmod=755 docker/stamp.sh /stamp.sh
+# Set by CI to the commit; makes asset URLs unique per build (see stamp.sh).
+ARG APP_VERSION=
+RUN /stamp.sh "$APP_VERSION" /pb/pb_public
 
 VOLUME /pb/pb_data
 EXPOSE 8090

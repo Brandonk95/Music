@@ -3,3 +3,4 @@
 !pb_migrations
 !pb_hooks
 !docker/entrypoint.sh
+!docker/stamp.sh
