@@ -7,6 +7,7 @@ import { store } from './store.js';
 import { tone } from './tone.js';
 import { applyProfile, loadLocalProfile } from './personalize.js';
 import { toast } from './ui.js';
+import { initInstall } from './install.js';
 
 const renderSettings = initSettingsView();
 initTuner();
@@ -23,7 +24,12 @@ function showTab(name) {
 }
 
 document.querySelectorAll('.tabbar button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
-showTab(settings.tab === 'settings' ? 'settings' : settings.tab || 'tuner');
+// Home-screen shortcuts open a specific tab (?tab=tuner / ?tab=metronome).
+const startTab = new URLSearchParams(location.search).get('tab');
+if (startTab) history.replaceState(null, '', location.pathname);
+showTab(['tuner', 'metronome'].includes(startTab) ? startTab
+  : settings.tab === 'settings' ? 'settings' : settings.tab || 'tuner');
+initInstall();
 
 // Free the mic when the app is backgrounded.
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopTuner(); });

@@ -1,5 +1,6 @@
 // Settings tab: account (PocketBase), tuner and metronome preferences.
 import { settings, setSetting } from './settings.js';
+import { installHelp, installMode, installEvents } from './install.js';
 import { store } from './store.js';
 import { TRANSPOSITIONS, noteLabel } from './notes.js';
 import { h, fill, $, toast } from './ui.js';
@@ -92,6 +93,11 @@ async function render() {
   const root = $('settingsBody');
   const account = await accountSection();
   fill(root, 
+    installMode() !== 'installed' && h('h2', { class: 'section' }, 'Install app'),
+    installMode() !== 'installed' && h('div', { class: 'card' },
+      h('p', {}, 'Add TempoTune to your home screen: it opens full screen like a normal app and works offline.'),
+      installHelp()),
+
     h('h2', { class: 'section' }, 'Account'),
     account,
 
@@ -130,5 +136,6 @@ async function render() {
 
 export function initSettingsView() {
   store.addEventListener('change', () => { if ($('view-settings').classList.contains('active')) render(); });
+  installEvents.addEventListener('change', () => { if ($('view-settings').classList.contains('active')) render(); });
   return render;
 }

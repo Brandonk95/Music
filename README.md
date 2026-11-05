@@ -53,6 +53,14 @@ set that collection's **Create rule** to superusers-only in the admin UI and cre
 
 ## Use it on your phone
 
+**Install it:** open TempoTune over your https address, then:
+- **Android (Chrome, Edge, Samsung Internet):** tap **Install** on the banner, or Settings → Install app.
+- **iPhone / iPad:** in Safari, tap Share ⬆ → **Add to Home Screen**. Settings → Install app shows the
+  same steps.
+
+Once installed, it opens full screen and works offline. Long-press the icon for Tuner/Metronome
+shortcuts (Android). Installing needs https, so it won't work from a plain `http://192.168…` address.
+
 Browsers only allow microphone access over **HTTPS** (or on `localhost`), so the tuner won't work at a
 plain `http://192.168.x.x:8090` address. The metronome will, though. The easiest fix is
 Tailscale. On the server:
@@ -104,10 +112,10 @@ Pick your instrument from the tuner's instrument menu (Woodwinds, Brass, Percuss
 ## Group metronome (sectionals)
 
 Play one metronome on everyone's phone, in sync, without everybody fiddling with their own.
-Everyone needs an account.
+The host needs an account; everyone else can join as a guest with just their name.
 
 1. The section leader opens **Metronome → 👥 Group → Start a group** and reads out the 6-character code.
-2. Everyone else taps **👥 Group**, types the code and taps **Join**. Each phone first plays a few
+2. Everyone else taps **👥 Group**, enters their name (if not signed in) and the code, and taps **Join**. Each phone first plays a few
    quick clicks to measure its own speaker delay (keep quiet for a second).
 3. The host presses **▶**. Everyone holds their phone near the host's for a few beats: each phone
    listens, locks onto the host's clicks, then joins in. The group bar turns green ("In sync ±1 ms").

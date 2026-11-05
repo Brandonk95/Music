@@ -1,5 +1,5 @@
 // Group metronome UI: the "Group" chip, the group bar, and its sheets.
-import { party } from './party.js';
+import { party, savedGuestName } from './party.js';
 import { met } from './metronome.js';
 import { store } from './store.js';
 import { h, fill, $, toast, openSheet } from './ui.js';
@@ -82,18 +82,16 @@ function goToSettings() {
 // ---------- sheets ----------
 
 function openStartSheet() {
-  if (!store.loggedIn) {
-    const s = openSheet('Group metronome', h('div', { class: 'form' },
-      h('p', {}, 'Play one metronome on everyone\'s phone, in sync — for sectionals and rehearsals.'),
-      h('p', { class: 'hint' }, 'You need an account to start or join a group.'),
-      h('button', { class: 'primary wide', onclick: () => { s.close(); goToSettings(); } }, 'Sign in or create account')));
-    return;
-  }
+  const guest = !store.loggedIn;
   const codeInput = h('input', {
     class: 'code-input', placeholder: 'ABC123', maxlength: 6, autocapitalize: 'characters', autocomplete: 'off',
     spellcheck: false, 'aria-label': 'Group code',
     oninput: (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); },
     onkeydown: (e) => { if (e.key === 'Enter') join(); },
+  });
+  const nameInput = guest && h('input', {
+    class: 'text-input', placeholder: 'Your name', maxlength: 40, autocomplete: 'given-name', value: savedGuestName(),
+    'aria-label': 'Your name', onkeydown: (e) => { if (e.key === 'Enter') codeInput.focus(); },
   });
   const err = h('p', { class: 'hint error' });
   const busy = (on) => sheet.body.querySelectorAll('button').forEach((b) => { b.disabled = on; });
@@ -102,15 +100,20 @@ function openStartSheet() {
     err.textContent = '';
     try { await fn(); sheet.close(); openDetails(); } catch (e) { err.textContent = e.message; } finally { busy(false); }
   };
-  const join = () => run(() => party.join(codeInput.value));
+  const join = () => run(() => party.join(codeInput.value, { name: nameInput?.value }));
   const sheet = openSheet('Group metronome', h('div', { class: 'form' },
-    h('p', {}, 'One phone hosts. Everyone else joins with the code, then holds their phone near the host\'s while it plays — each phone listens for a few beats and locks on.'),
-    h('button', { class: 'primary wide', onclick: () => run(() => party.create()) }, 'Start a group'),
+    h('p', {}, 'One phone hosts. Everyone else joins with the code, then holds their phone near the host’s while it plays — each phone listens for a few beats and locks on.'),
     h('h3', {}, 'Join a group'),
+    nameInput,
     h('div', { class: 'join-row' }, codeInput, h('button', { class: 'primary', onclick: join }, 'Join')),
     err,
-    h('p', { class: 'hint' }, 'Joining uses the microphone for a few seconds to line up with the host\'s speaker.')));
-  setTimeout(() => codeInput.focus(), 50);
+    h('p', { class: 'hint' }, 'Joining uses the microphone for a few seconds to line up with the host’s speaker.'),
+    h('h3', {}, 'Host a group'),
+    guest
+      ? [h('p', { class: 'hint' }, 'Starting a group needs an account. Joining doesn’t.'),
+        h('button', { class: 'ghost wide', onclick: () => { sheet.close(); goToSettings(); } }, 'Sign in or create account')]
+      : h('button', { class: 'primary wide', onclick: () => run(() => party.create()) }, 'Start a group')));
+  setTimeout(() => (nameInput && !nameInput.value ? nameInput : codeInput).focus(), 50);
 }
 
 function drawDetails(body) {
@@ -198,7 +201,8 @@ export function initPartyUI() {
   party.addEventListener('error', (e) => toast(e.detail));
   met.addEventListener('state', renderControls);
   met.addEventListener('change', () => party.active && renderControls());
-  store.addEventListener('change', () => { if (!store.loggedIn && party.active) party.leave(); });
+  // Signing out leaves a group joined with the account (guests aren't affected).
+  store.addEventListener('change', () => { if (!store.loggedIn && party.active && !party.isGuest) party.leave(); });
   window.addEventListener('pagehide', () => { if (party.active && !party.isHost) party.leave(); });
   renderBar();
 }

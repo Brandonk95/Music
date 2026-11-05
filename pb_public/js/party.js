@@ -26,6 +26,12 @@ const SOUND_KEYS = ['accents', 'subdivision', 'sound', 'noteValue', 'volume', 's
 
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 const memberName = () => store.user?.name || (store.user?.email || 'Player').split('@')[0];
+const GUEST_NAME_KEY = 'tt.guestName';
+const KEY_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const makeGuestKey = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => KEY_CHARS[b % KEY_CHARS.length]).join('');
+
+/** Name last used to join as a guest (no account). */
+export const savedGuestName = () => localStorage.getItem(GUEST_NAME_KEY) || '';
 
 class Party extends EventTarget {
   constructor() {
@@ -70,8 +76,11 @@ class Party extends EventTarget {
     await this._enter(rec, true, clock);
   }
 
-  async join(rawCode) {
-    if (!store.loggedIn) throw new Error('Sign in to join a group');
+  /** Join with a code. Without an account, `name` is required (guest). */
+  async join(rawCode, { name } = {}) {
+    const guest = !store.loggedIn;
+    const guestName = String(name || '').trim().slice(0, 40);
+    if (guest && !guestName) throw new Error('Enter your name to join');
     const code = String(rawCode).toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (code.length !== 6) throw new Error('Codes are 6 letters/numbers');
     await unlock();
@@ -80,8 +89,18 @@ class Party extends EventTarget {
     if (!rec || rec.state?.status === 'ended') throw new Error('No active group with that code');
     const clock = new SyncClock();
     await clock.start();
-    if (rec.host === store.user.id) return this._enter(rec, true, clock); // host rejoining
-    this.member = await this._upsertMember(rec);
+    if (!guest && rec.host === store.user.id) return this._enter(rec, true, clock); // host rejoining
+    if (guest) {
+      localStorage.setItem(GUEST_NAME_KEY, guestName);
+      this.guestKey = makeGuestKey();
+      this.member = await store.api('/api/collections/party_members/records', {
+        method: 'POST',
+        body: JSON.stringify({ party: rec.id, name: guestName, status: 'joined', seen: Date.now(), guestKey: this.guestKey }),
+      });
+    } else {
+      this.guestKey = null;
+      this.member = await this._upsertMember(rec);
+    }
     await this._enter(rec, false, clock);
     this._afterGuestJoin();
   }
@@ -140,10 +159,11 @@ class Party extends EventTarget {
       if (this.isHost && end) {
         await store.api(`/api/collections/parties/records/${rec.id}`, { method: 'DELETE' });
       } else if (this.member) {
-        await store.api(`/api/collections/party_members/records/${this.member.id}`, { method: 'DELETE' });
+        await store.api(`/api/collections/party_members/records/${this.member.id}`, { method: 'DELETE', headers: this._memberHeaders() });
       }
     } catch { /* best effort */ }
     this.member = null;
+    this.guestKey = null;
     this.isHost = false;
     this._emit();
   }
@@ -297,12 +317,17 @@ class Party extends EventTarget {
     if (!this.member) return;
     try {
       this.member = await store.api(`/api/collections/party_members/records/${this.member.id}`, {
-        method: 'PATCH', body: JSON.stringify({ ...fields, seen: Date.now() }),
+        method: 'PATCH', body: JSON.stringify({ ...fields, seen: Date.now() }), headers: this._memberHeaders(),
       });
     } catch { /* best effort */ }
   }
 
   _heartbeat() { this._updateMember({}); }
+
+  /** Guests prove which member record is theirs with their secret key. */
+  _memberHeaders() { return this.guestKey ? { 'X-Guest-Key': this.guestKey } : {}; }
+
+  get isGuest() { return !!this.guestKey; }
 
   // ---------- acoustic sync (members) ----------
 
@@ -394,7 +419,8 @@ class Party extends EventTarget {
       acoustic.closeMic();
       this.syncing = false;
     }
-    if (!this.record) return;
+    // Left, or chose "follow without the mic" meanwhile: keep that choice.
+    if (!this.record || this.sync.status === 'network') return;
     if (result) {
       this._setSync({ status: 'synced', delta: result.delta, spreadMs: result.spread * 1000, heard: result.n });
       this._updateMember({ status: 'synced', syncMs: Math.round(result.spread * 10000) / 10 });
