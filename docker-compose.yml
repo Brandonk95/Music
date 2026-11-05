@@ -1,0 +1,88 @@
+# TempoTune: tuner & metronome for band.
+# Works with plain `docker compose up -d` and with CasaOS (App Store -> Custom Install -> Import).
+# Keep Apps/TempoTune/docker-compose.yml identical to this file (CI checks it).
+name: tempotune
+
+services:
+  tempotune:
+    image: ghcr.io/brandonk95/tempotune:latest
+    container_name: tempotune
+    restart: unless-stopped
+    environment:
+      # Optional: set both to create the PocketBase admin account (http://<server>:8090/_/).
+      PB_ADMIN_EMAIL: ""
+      PB_ADMIN_PASSWORD: ""
+    ports:
+      - target: 8090
+        published: "8090"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/tempotune/pb_data
+        target: /pb/pb_data
+    labels:
+      # Lets the updater below pull new versions of this container.
+      com.centurylinklabs.watchtower.scope: tempotune
+    x-casaos:
+      envs:
+        - container: PB_ADMIN_EMAIL
+          description:
+            en_us: "Optional: admin email for the PocketBase dashboard (/_/)"
+        - container: PB_ADMIN_PASSWORD
+          description:
+            en_us: "Optional: admin password (10+ characters)"
+      ports:
+        - container: "8090"
+          description:
+            en_us: Web UI
+      volumes:
+        - container: /pb/pb_data
+          description:
+            en_us: Database (accounts, presets, setlists)
+
+  # Checks GitHub's container registry every 5 minutes and updates TempoTune when a
+  # new image has been built from the main branch. Scoped so it touches nothing else.
+  # (nickfedor/watchtower is the maintained fork; the original breaks on Docker 29+.)
+  tempotune-updater:
+    image: nickfedor/watchtower:latest
+    container_name: tempotune-updater
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_SCOPE: tempotune
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_CLEANUP: "true"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    labels:
+      com.centurylinklabs.watchtower.scope: tempotune
+    x-casaos:
+      volumes:
+        - container: /var/run/docker.sock
+          description:
+            en_us: Docker socket, needed to update the TempoTune container
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: tempotune
+  store_app_id: tempotune
+  author: Brandonk95
+  developer: Brandonk95
+  category: Utilities
+  title:
+    en_us: TempoTune
+  tagline:
+    en_us: Ad-free tuner & metronome for band
+  description:
+    en_us: >-
+      Chromatic tuner with band and orchestra instruments (shows written pitch for B♭, E♭ and F
+      instruments), just intonation, drones and tuning notes, plus a metronome with accents,
+      subdivisions, count-ins, drill set counts, speed/gap trainers, presets and setlists.
+      Install it to your phone's home screen. Updates automatically from GitHub.
+  icon: https://raw.githubusercontent.com/Brandonk95/tempotune/main/pb_public/icons/icon-512.png
+  index: /
+  port_map: "8090"
+  scheme: http

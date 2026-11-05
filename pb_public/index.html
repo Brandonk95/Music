@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e1014">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="TempoTune">
+  <meta name="description" content="Ad-free tuner and metronome">
+  <title>TempoTune</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <main id="views">
+    <!-- TUNER -->
+    <section id="view-tuner" class="view" aria-label="Tuner">
+      <header class="topbar">
+        <button id="tuningBtn" class="chip select-chip"><span id="tuningLabel">Guitar · Standard</span> <span aria-hidden="true">▾</span></button>
+        <button id="a4Btn" class="chip">A4 = <span id="a4Label">440</span></button>
+      </header>
+
+      <div class="tuner-main">
+        <div id="noteDisplay" class="note-display idle" aria-live="polite">
+          <div class="note"><span id="noteName">–</span><sub id="noteOct"></sub></div>
+          <div id="concertLabel" class="concert-line"></div>
+          <div id="tuneHint" class="hint-line">Tap Start to listen</div>
+        </div>
+        <canvas id="gauge" class="gauge" aria-label="Tuning meter"></canvas>
+        <div class="readout"><span id="centsLabel">0¢</span><span id="freqLabel">— Hz</span></div>
+        <canvas id="history" class="history" aria-label="Pitch history"></canvas>
+      </div>
+
+      <div id="strings" class="strings"></div>
+
+      <div class="actions">
+        <button id="autoBtn" class="chip on" aria-pressed="true">Auto</button>
+        <button id="micBtn" class="primary big">Start tuner</button>
+        <button id="toneBtn" class="chip">♪ Tone</button>
+      </div>
+    </section>
+
+    <!-- METRONOME -->
+    <section id="view-metronome" class="view" aria-label="Metronome">
+      <header class="topbar">
+        <button id="libraryBtn" class="chip">☰ Library</button>
+        <button id="savePresetBtn" class="chip">Save</button>
+      </header>
+      <div id="setlistBar" class="setlist-bar" hidden>
+        <button id="slPrev" class="icon-btn" aria-label="Previous song">◀</button>
+        <span id="slName"></span>
+        <button id="slNext" class="icon-btn" aria-label="Next song">▶</button>
+        <button id="slClose" class="icon-btn" aria-label="Close setlist">✕</button>
+      </div>
+
+      <div id="beats" class="beats"></div>
+      <div id="countInLabel" class="count-in"></div>
+
+      <div class="bpm-block">
+        <div id="tempoName" class="tempo-name">Allegro</div>
+        <div class="bpm-row">
+          <button id="bpmMinus" class="round" aria-label="Slower">−</button>
+          <div id="bpmValue" class="bpm" role="button" tabindex="0" aria-label="Tempo, drag to change or tap to type">120</div>
+          <button id="bpmPlus" class="round" aria-label="Faster">+</button>
+        </div>
+        <div class="bpm-unit">BPM</div>
+        <input id="bpmSlider" class="bpm-slider" type="range" min="20" max="400" step="1" aria-label="Tempo">
+      </div>
+
+      <div class="opts">
+        <button id="tsBtn" class="opt"><small>Time</small><b id="tsLabel">4/4</b></button>
+        <button id="subBtn" class="opt"><small>Subdivide</small><b id="subLabel">♩</b></button>
+        <button id="soundBtn" class="opt"><small>Sound</small><b id="soundLabel">Click</b></button>
+        <button id="moreBtn" class="opt"><small>Practice</small><b id="trainerLabel">Off</b></button>
+      </div>
+
+      <div class="actions">
+        <button id="tapBtn" class="chip big-chip">Tap</button>
+        <button id="playBtn" class="play" aria-label="Play"><span id="playIcon">▶</span></button>
+        <button id="timerBtn" class="chip big-chip"><span id="timerLabel">0:00</span></button>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view scroll" aria-label="Settings">
+      <header class="topbar"><h1>Settings</h1></header>
+      <div id="settingsBody" class="settings-body"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar" role="tablist">
+    <button data-tab="tuner" role="tab"><span class="ti">◎</span>Tuner</button>
+    <button data-tab="metronome" role="tab"><span class="ti">◭</span>Metronome</button>
+    <button data-tab="settings" role="tab"><span class="ti">⚙</span>Settings</button>
+  </nav>
+
+  <div id="flash" class="flash" aria-hidden="true"></div>
+  <div id="toast" class="toast" role="status"></div>
+</body>
+</html>

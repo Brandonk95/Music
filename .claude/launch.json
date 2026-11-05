@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "pb_public"],
+      "port": 8765
+    },
+    {
+      "name": "pocketbase",
+      "runtimeExecutable": "./pocketbase.exe",
+      "runtimeArgs": ["serve", "--http=127.0.0.1:8090"],
+      "port": 8090
+    }
+  ]
+}
