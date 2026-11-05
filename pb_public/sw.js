@@ -1,11 +1,11 @@
 // Offline support: network-first for app files (so updates show immediately),
 // falling back to the cache when offline. API calls are never cached here.
-const CACHE = 'tempotune-v3';
+const CACHE = 'tempotune-v4';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/audio.js', 'js/metronome.js', 'js/metronome-engine.js', 'js/notes.js', 'js/pitch.js',
   'js/settings.js', 'js/settings-view.js', 'js/sounds.js', 'js/store.js', 'js/tone.js', 'js/tuner.js',
-  'js/ui.js', 'js/wakelock.js', 'js/personalize.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png',
+  'js/ui.js', 'js/wakelock.js', 'js/personalize.js', 'js/clock.js', 'js/acoustic.js', 'js/capture-worklet.js', 'js/party.js', 'js/party-ui.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png',
 ];
 
 self.addEventListener('install', (e) => {

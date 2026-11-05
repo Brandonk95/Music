@@ -1,4 +1,5 @@
 *
 !pb_public
 !pb_migrations
+!pb_hooks
 !docker/entrypoint.sh

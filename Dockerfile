@@ -10,6 +10,7 @@ RUN apk add --no-cache ca-certificates tzdata \
  && rm /tmp/pb.zip
 
 COPY pb_migrations /pb/pb_migrations
+COPY pb_hooks /pb/pb_hooks
 COPY pb_public /pb/pb_public
 COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
 

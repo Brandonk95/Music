@@ -287,3 +287,42 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 32px; }
   .round { width: 48px; height: 48px; }
   .history { height: 40px; }
 }
+
+/* ---------- group metronome ---------- */
+.group-bar { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px; padding: 8px 12px; min-height: 44px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-align: left; }
+.group-bar[hidden] { display: none; }
+.group-bar b { letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
+.group-bar #groupStatus { flex: 1; color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-more { color: var(--muted); font-size: 20px; }
+.group-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.group-bar[data-sync="host"] .group-dot, .group-bar[data-sync="synced"] .group-dot { background: var(--good); }
+.group-bar[data-sync="network"] .group-dot { background: var(--close); }
+.group-bar[data-sync="listening"] .group-dot, .group-bar[data-sync="calibrating"] .group-dot { background: var(--accent); animation: group-pulse 0.8s ease-in-out infinite alternate; }
+.group-bar[data-sync="failed"] .group-dot { background: var(--far); }
+@keyframes group-pulse { to { opacity: 0.25; } }
+.group-code-big { font-size: 44px; font-weight: 800; letter-spacing: 0.18em; text-align: center; font-variant-numeric: tabular-nums; margin: 4px 0 0; user-select: all; }
+.group-sub { text-align: center; color: var(--muted); font-size: 14px; margin: 4px 0 12px; }
+.group-sub.error, .hint.error { color: var(--far); }
+.join-row { display: flex; gap: 8px; }
+.code-input { flex: 1; min-width: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; text-align: center;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; color: inherit; padding: 8px; }
+.member { padding: 10px 12px; }
+.member-name { flex: 1; font-weight: 600; }
+.member-status { color: var(--muted); font-size: 14px; }
+.member-status.s-synced { color: var(--good); }
+.member-status.s-failed { color: var(--far); }
+.danger.ghost { color: var(--far); }
+#tapBtn:disabled { opacity: 0.4; }
+/* Members follow the host: their tempo controls are read-only. */
+.group-guest .bpm-block, .group-guest .opts, .group-guest .beats { pointer-events: none; }
+.group-guest .bpm-row .round, .group-guest .bpm-slider { opacity: 0.35; }
+.group-guest #savePresetBtn, .group-guest #libraryBtn, .group-guest #timerBtn, .group-on #setlistBar { display: none; }
+/* The group bar takes a row; give it back on short screens. */
+@media (max-height: 720px) {
+  .group-on .beats { height: 80px; padding-top: 8px; }
+  .group-on .count-in { margin-top: 6px; }
+  .group-on .bpm-block { padding-top: 0; }
+  .group-on .tempo-name { display: none; }
+  .group-on .bpm { font-size: clamp(64px, 20vw, 104px); }
+}

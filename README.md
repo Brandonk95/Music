@@ -97,6 +97,43 @@ Pick your instrument from the tuner's instrument menu (Woodwinds, Brass, Percuss
 - Metronome: count-ins of 1–2 bars or 4/8 counts, **drill set length** (stops after 8/16/32… counts,
   with a live "Count 12 of 16"), a bar counter, and loud sounds (cowbell, rimshot, woodblock).
 
+## Group metronome (sectionals)
+
+Play one metronome on everyone's phone, in sync, without everybody fiddling with their own.
+Everyone needs an account.
+
+1. The section leader opens **Metronome → 👥 Group → Start a group** and reads out the 6-character code.
+2. Everyone else taps **👥 Group**, types the code and taps **Join**. Each phone first plays a few
+   quick clicks to measure its own speaker delay (keep quiet for a second).
+3. The host presses **▶**. Everyone holds their phone near the host's for a few beats: each phone
+   listens, locks onto the host's clicks, then joins in. The group bar turns green ("In sync ±1 ms").
+
+While it runs, the host's controls work for everyone:
+
+- **Pause** (the Tap button): every phone goes silent on the next beat but keeps counting, so you
+  can stop and talk, then **Resume** comes back in exactly on the beat. Nobody re-syncs.
+- **■** stops and resets; **▶** starts again after a short count-off. Still no re-sync.
+- Tempo, meter, accents, subdivision and sound changes go to everyone. Tempo and meter changes
+  start on the next downbeat, so the grid never jumps.
+- Players' tempo controls are locked while they're in a group. **End group** in the group sheet
+  closes it for everyone, and their own settings come back.
+
+How it works: every phone keeps a clock locked to the server's (`/api/time`), and the host
+publishes the beat grid on that clock (start time, tempo, meter). That alone usually gets
+within ~10–30 ms. The mic step removes the rest: each phone hears the host's clicks
+(the host's speaker and air delay, plus its own mic delay) and subtracts its own measured
+speaker-to-mic delay, so its clicks come out of its speaker when the host's do.
+
+Notes:
+- If a phone can't hear the host (too loud, too far), tap the group bar → **Sync with host** again,
+  or **Follow without the mic** (network clock only, less exact).
+- Bluetooth speakers and headphones add a lot of delay that can't be measured this way. Use the
+  phone speaker, or recalibrate with the Bluetooth speaker held next to the mic.
+- iPhone: if a phone stays silent, check the ringer switch. Keep the app in front, since iOS pauses
+  web audio in the background. Syncing briefly uses the mic, which can make the speaker quieter
+  for a moment.
+- Parties left open are cleaned up after a day (`pb_hooks/tempotune.pb.js`).
+
 ## Features
 
 **Tuner**
@@ -122,7 +159,7 @@ Pick your instrument from the tuner's instrument menu (Woodwinds, Brass, Percuss
 **General**: works offline once loaded, can be installed to the home screen, and syncs to your
 account when signed in. Without an account, everything is saved on the device.
 
-Keyboard (desktop): Space play/stop, ←/→ or ↑/↓ change tempo (Shift = ±10), T tap.
+Keyboard (desktop): Space play/stop, ←/→ or ↑/↓ change tempo (Shift = ±10), T tap, P pause (group host).
 
 ## Layout
 
@@ -133,5 +170,9 @@ pb_public/        the web app (PocketBase serves this folder)
   js/metronome-engine.js  lookahead audio scheduler
   js/metronome.js metronome UI, presets, setlists
   js/store.js     local + PocketBase storage
-pb_migrations/    creates the "presets" collection
+  js/clock.js     server-clock sync for the group metronome
+  js/acoustic.js  mic onset timing (acoustic sync)
+  js/party.js     group metronome (host/member logic); party-ui.js is its UI
+pb_migrations/    creates the "presets", "parties" and "party_members" collections
+pb_hooks/         /api/time and cleanup of old groups
 ```

@@ -1,6 +1,7 @@
 import { settings, setSetting } from './settings.js';
 import { initTuner, stopTuner } from './tuner.js';
 import { initMetronome } from './metronome.js';
+import { initPartyUI } from './party-ui.js';
 import { initSettingsView } from './settings-view.js';
 import { store } from './store.js';
 import { tone } from './tone.js';
@@ -10,6 +11,7 @@ import { toast } from './ui.js';
 const renderSettings = initSettingsView();
 initTuner();
 initMetronome();
+initPartyUI();
 
 function showTab(name) {
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));

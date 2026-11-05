@@ -2,7 +2,7 @@
 set -e
 
 PB="/pb/pocketbase"
-ARGS="--dir=/pb/pb_data --migrationsDir=/pb/pb_migrations"
+ARGS="--dir=/pb/pb_data --migrationsDir=/pb/pb_migrations --hooksDir=/pb/pb_hooks"
 
 # Optional: create/update the PocketBase admin account from environment variables.
 if [ -n "$PB_ADMIN_EMAIL" ] && [ -n "$PB_ADMIN_PASSWORD" ]; then

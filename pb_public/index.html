@@ -49,8 +49,15 @@
     <section id="view-metronome" class="view" aria-label="Metronome">
       <header class="topbar">
         <button id="libraryBtn" class="chip">☰ Library</button>
+        <button id="groupBtn" class="chip">👥 Group</button>
         <button id="savePresetBtn" class="chip">Save</button>
       </header>
+      <button id="groupBar" class="group-bar" hidden>
+        <span class="group-dot" aria-hidden="true"></span>
+        <b id="groupCode"></b>
+        <span id="groupStatus"></span>
+        <span class="group-more" aria-hidden="true">›</span>
+      </button>
       <div id="setlistBar" class="setlist-bar" hidden>
         <button id="slPrev" class="icon-btn" aria-label="Previous song">◀</button>
         <span id="slName"></span>

@@ -24,6 +24,54 @@ export const ACCENT = { MUTE: 0, SOFT: 1, NORMAL: 2, STRONG: 3 };
 
 const LOOKAHEAD = 0.12; // seconds of audio scheduled ahead
 
+// ---------- group metronome timeline ----------
+// A party state describes a beat grid on the shared server clock:
+//   t0 (ms, a downbeat), bpm, beats  -- current grid, valid from t0 on
+//   prev {t0,bpm,beats}               -- previous grid, valid until t0 (pending tempo change)
+//   mute {on, at}                     -- pause switches to `on` at server time `at`
+// Every device derives identical beat times from it, so changes never need a resync.
+
+export function isMutedAt(s, ts) {
+  const m = s.mute;
+  if (!m) return false;
+  return ts >= m.at ? !!m.on : !m.on;
+}
+
+function segments(s) {
+  const cur = { t0: s.t0, bpm: s.bpm, beats: s.beats, lo: s.t0, hi: Infinity };
+  if (!s.prev) return [cur];
+  return [{ ...s.prev, lo: s.prev.t0, hi: s.t0 }, cur];
+}
+
+/** All clicks with server time in [A, B), sorted. pattern = subdivision offsets. */
+export function groupEvents(s, A, B, pattern = [0]) {
+  const out = [];
+  for (const seg of segments(s)) {
+    const a = Math.max(A, seg.lo), b = Math.min(B, seg.hi);
+    if (!(b > a)) continue;
+    const P = 60000 / seg.bpm;
+    for (let k = Math.max(0, Math.floor((a - seg.t0) / P) - 1); seg.t0 + k * P < b; k++) {
+      pattern.forEach((o, sub) => {
+        const ts = seg.t0 + (k + o) * P;
+        if (ts >= a && ts < b) out.push({ ts, k, sub, beat: k % seg.beats, bar: Math.floor(k / seg.beats), P });
+      });
+    }
+  }
+  return out.sort((x, y) => x.ts - y.ts);
+}
+
+/** Server time of the first main beat at or after t. */
+export function nextBeatAt(s, t) {
+  const ev = groupEvents(s, t, t + 2 * 60000 / 20, [0]);
+  return ev.length ? ev[0].ts : t;
+}
+
+/** Server time of the first downbeat at or after t (where a tempo change can start). */
+export function nextDownbeatAt(s, t) {
+  const ev = groupEvents(s, t, t + 17 * 60000 / 20, [0]).find((e) => e.beat === 0);
+  return ev ? ev.ts : t;
+}
+
 const workerSrc = `let id=null;onmessage=e=>{clearInterval(id);if(e.data==='start')id=setInterval(()=>postMessage(0),20)}`;
 
 export class Metronome extends EventTarget {
@@ -46,7 +94,8 @@ export class Metronome extends EventTarget {
     this.playing = false;
     this.events = []; // visual events waiting to be shown
     this.worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'text/javascript' })));
-    this.worker.onmessage = () => this._schedule();
+    this.worker.onmessage = () => (this.group ? this._scheduleGroup() : this._schedule());
+    this.group = null; // set while in a group metronome
     this.sources = new Set();
   }
 
@@ -121,7 +170,7 @@ export class Metronome extends EventTarget {
 
   // ---- transport ----
   async start() {
-    if (this.playing) return;
+    if (this.playing || this.group) return;
     const ctx = await unlock();
     if (!this.soundSet) await this._loadSound();
     this.playing = true;
@@ -140,14 +189,83 @@ export class Metronome extends EventTarget {
   }
 
   stop() {
-    if (!this.playing) return;
+    if (!this.playing || this.group) return;
     this.playing = false;
     this.worker.postMessage('stop');
+    this._silence();
+    this._emit('state');
+  }
+
+  _silence() {
     const now = getCtx().currentTime;
     this.sources.forEach((s) => { try { s.stop(now); } catch { /* done */ } });
     this.sources.clear();
     this.events = [];
-    this._emit('state');
+  }
+
+  // ---- group mode ----
+  /**
+   * g = { clock (SyncClock), state (party state), delta (s, acoustic correction),
+   *       audible (bool), isHost, controls }
+   */
+  enterGroup(g) {
+    this.stop();
+    this.group = g;
+    this.groupUntil = null;
+    this.events = [];
+    if (!this.soundSet) this._loadSound();
+    this.worker.postMessage('start');
+  }
+
+  exitGroup() {
+    if (!this.group) return;
+    this.worker.postMessage('stop');
+    this._silence();
+    this.group = null;
+    if (this.playing) { this.playing = false; this._emit('state'); }
+  }
+
+  _scheduleGroup() {
+    const g = this.group;
+    g.clock.updateCtx();
+    const s = g.state;
+    if (!g.clock.ready || !s || s.status !== 'playing') {
+      if (this.playing) { this._silence(); this.playing = false; this._emit('state'); }
+      this.groupUntil = null;
+      return;
+    }
+    if (!this.playing) { this.playing = true; this._emit('state'); }
+    if (!this.soundSet) return;
+    const now = g.clock.serverNow();
+    const A = Math.max(this.groupUntil ?? now, now);
+    const B = now + LOOKAHEAD * 1000;
+    if (B <= A) return;
+    for (const ev of groupEvents(s, A, B, this.pattern.pattern)) this._groupEvent(ev, s);
+    this.groupUntil = B;
+  }
+
+  _groupEvent(ev, s) {
+    const g = this.group;
+    const ctx = getCtx();
+    const t = g.clock.toCtx(ev.ts) + (g.delta || 0);
+    if (t < ctx.currentTime + 0.003) return; // too late to play accurately
+    const isMain = ev.sub === 0;
+    const level = this.accents[ev.beat] ?? (ev.beat === 0 ? 3 : 2);
+    const paused = isMutedAt(s, ev.ts);
+    const silent = level === 0 || paused || !g.audible || (isMain && !!this.pattern.silentMain);
+    if (!silent) {
+      if (isMain) this._play(level === 3 ? this.soundSet.accent : this.soundSet.normal, t, (level === 3 ? 1 : level === 2 ? 0.72 : 0.32) * this.volume);
+      else {
+        const gain = this.subVolume * this.volume * (level === 1 ? 0.6 : 1);
+        if (gain > 0) this._play(this.soundSet.sub, t, gain);
+      }
+    }
+    this.events.push({
+      time: t, ts: ev.ts, beat: ev.beat, sub: ev.sub, main: isMain, level, silent,
+      counting: false, bar: ev.bar, count: 0, countIn: 0, paused, unsynced: !g.audible,
+    });
+    // Nobody drains these while the screen is off; don't let a long rehearsal pile them up.
+    if (this.events.length > 512) this.events.splice(0, this.events.length - 256);
   }
 
   toggle() { return this.playing ? this.stop() : this.start(); }

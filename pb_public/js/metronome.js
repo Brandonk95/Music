@@ -108,8 +108,10 @@ function loop() {
       if (settings.vibrate) navigator.vibrate?.(ev.level === 3 ? 35 : 15);
     }
     const status = $('countInLabel');
-    status.textContent = ev.counting ? `Count-in ${ev.countIn}`
-      : met.drillCounts ? `Count ${ev.count} of ${met.drillCounts}` : `Bar ${ev.bar + 1}`;
+    status.textContent = met.group
+      ? (ev.paused ? 'Paused · still counting' : ev.unsynced ? 'Listening to the host…' : `Bar ${ev.bar + 1}`)
+      : ev.counting ? `Count-in ${ev.countIn}`
+        : met.drillCounts ? `Count ${ev.count} of ${met.drillCounts}` : `Bar ${ev.bar + 1}`;
     status.classList.toggle('counting', ev.counting);
 
   }
@@ -406,7 +408,8 @@ export function initMetronome() {
   met.addEventListener('state', renderTransport);
   met.addEventListener('finished', () => { toast(`Set complete: ${met.drillCounts} counts`); navigator.vibrate?.(150); });
 
-  $('playBtn').addEventListener('click', () => met.toggle());
+  const playPressed = () => (met.group ? met.group.controls.play() : met.toggle());
+  $('playBtn').addEventListener('click', playPressed);
   holdRepeat($('bpmMinus'), () => bumpBpm(-1));
   holdRepeat($('bpmPlus'), () => bumpBpm(1));
   $('bpmSlider').addEventListener('input', (e) => met.setBpm(+e.target.value));
@@ -425,10 +428,12 @@ export function initMetronome() {
 
   document.addEventListener('keydown', (e) => {
     if (!$('view-metronome').classList.contains('active') || e.target.closest('input, textarea, .sheet')) return;
-    if (e.code === 'Space') { e.preventDefault(); met.toggle(); }
+    if (e.code === 'Space') { e.preventDefault(); playPressed(); }
+    if (e.key.toLowerCase() === 'p' && met.group?.isHost) met.group.controls.pause();
+    if (met.group && !met.group.isHost) return; // members follow the host's tempo
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') bumpBpm(e.shiftKey ? 10 : 1);
     if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') bumpBpm(e.shiftKey ? -10 : -1);
-    if (e.key.toLowerCase() === 't') tap();
+    if (e.key.toLowerCase() === 't' && !met.group) tap();
   });
 
   render();
