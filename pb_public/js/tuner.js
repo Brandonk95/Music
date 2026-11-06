@@ -247,22 +247,51 @@ function configureAnalyser() {
   freqWindow = [];
 }
 
+let starting = false, wanted = false, tapRetry = null;
+
+/** Called when the Tuner tab is shown: listen straight away. */
+export function startTuner() {
+  wanted = true;
+  start();
+}
+
+/** If the browser needs a tap first (audio unlock or mic prompt), wait for one anywhere. */
+function needTap(text) {
+  $('tuneHint').textContent = text;
+  if (tapRetry) return;
+  tapRetry = () => { document.removeEventListener('pointerdown', tapRetry, true); tapRetry = null; if (wanted) start(); };
+  document.addEventListener('pointerdown', tapRetry, true);
+}
+
 async function start() {
+  if (running || starting) return;
   if (!navigator.mediaDevices?.getUserMedia) {
-    toast('Microphone needs HTTPS (or localhost). See README.', 5000);
+    $('tuneHint').textContent = 'Microphone needs HTTPS';
     return;
   }
-  const ctx = await unlock();
+  starting = true;
   try {
-    setMicActive(true);
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
-  } catch (e) {
-    setMicActive(false);
-    toast(e.name === 'NotAllowedError' ? 'Microphone permission denied' : `Mic error: ${e.message}`, 4000);
-    return;
-  }
+    const ctx = getCtx();
+    // resume() only finishes after a user gesture, so don't wait on it forever.
+    if (ctx.state !== 'running') {
+      await Promise.race([unlock(), new Promise((r) => setTimeout(r, 300))]);
+      if (ctx.state !== 'running') return needTap('Tap anywhere to start tuning');
+    }
+    try {
+      setMicActive(true);
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (e) {
+      setMicActive(false);
+      return needTap(e.name === 'NotAllowedError' ? 'Allow the microphone, then tap here' : `Mic error: ${e.message}`);
+    }
+    if (!wanted) { stream.getTracks().forEach((t) => t.stop()); setMicActive(false); return; }
+    listen(ctx);
+  } finally { starting = false; }
+}
+
+function listen(ctx) {
   source = ctx.createMediaStreamSource(stream);
   const lp = ctx.createBiquadFilter();
   lp.type = 'lowpass';
@@ -272,8 +301,6 @@ async function start() {
   configureAnalyser();
   running = true;
   wake.request('tuner');
-  $('micBtn').textContent = 'Stop';
-  $('micBtn').classList.add('on');
   $('view-tuner').classList.add('listening');
   $('tuneHint').textContent = 'Play a note…';
   lastFrameTime = performance.now();
@@ -281,6 +308,8 @@ async function start() {
 }
 
 export function stopTuner() {
+  wanted = false;
+  if (tapRetry) { document.removeEventListener('pointerdown', tapRetry, true); tapRetry = null; }
   if (!running) return;
   running = false;
   cancelAnimationFrame(rafId);
@@ -289,14 +318,13 @@ export function stopTuner() {
   setMicActive(false);
   wake.release('tuner');
   current = null;
-  $('micBtn').textContent = 'Start tuner';
-  $('micBtn').classList.remove('on');
   $('view-tuner').classList.remove('listening');
-  $('tuneHint').textContent = 'Tap Start to listen';
+  $('tuneHint').textContent = 'Paused';
   $('noteDisplay').className = 'note-display idle';
   draw();
 }
 
+let jumpTo = 0;
 const median = (arr) => {
   const s = [...arr].sort((a, b) => a - b);
   return s[s.length >> 1];
@@ -315,13 +343,33 @@ function frame(now) {
     : tuning.low != null ? Math.max(25, midiToFreq(tuning.low - 5, settings.a4)) : 27;
   const r = detector.detect(buf, { minFreq, maxFreq: 4200, minRms });
 
-  if (r.freq && r.clarity > 0.86) {
-    freqWindow.push(r.freq);
-    if (freqWindow.length > 5) freqWindow.shift();
-    // Drop the window if the pitch jumped (new note) so we react immediately.
-    const med = median(freqWindow);
-    if (Math.abs(1200 * Math.log2(r.freq / med)) > 80) freqWindow = [r.freq];
-    const freq = median(freqWindow);
+  // Sensitivity also sets how clean the sound must be: higher = keeps listening
+  // through other players. Once locked on a note, slightly messier frames near
+  // it still count, so the reading doesn't drop out when the room gets loud.
+  const needClarity = 0.93 - (settings.sensitivity - 1) * 0.025; // 0.93 .. 0.705
+  const med0 = freqWindow.length ? median(freqWindow) : 0;
+  const nearLock = med0 && r.freq && Math.abs(1200 * Math.log2(r.freq / med0)) < 60;
+  const ok = r.freq && r.clarity > (nearLock ? needClarity - 0.15 : needClarity);
+
+  let freq = 0;
+  if (ok) {
+    if (!med0 || nearLock) {
+      freqWindow.push(r.freq);
+      if (freqWindow.length > 7) freqWindow.shift();
+      jumpTo = 0;
+      freq = median(freqWindow);
+    } else if (jumpTo && Math.abs(1200 * Math.log2(r.freq / jumpTo)) < 60) {
+      // A new note, heard twice in a row: switch to it.
+      freqWindow = [jumpTo, r.freq];
+      jumpTo = 0;
+      freq = r.freq;
+    } else {
+      jumpTo = r.freq; // one stray frame from someone else: ignore unless it repeats
+      if (current) freq = current.freq;
+    }
+  }
+
+  if (freq) {
     const midiF = freqToMidi(freq, settings.a4);
 
     let target;
@@ -353,7 +401,7 @@ function frame(now) {
     history[histPos] = smoothCents;
   } else {
     history[histPos] = NaN;
-    if (current && now - lastHeard > 450) current = null;
+    if (current && now - lastHeard > 900) { current = null; freqWindow = []; jumpTo = 0; }
   }
   histPos = (histPos + 1) % HISTORY_LEN;
   if (current) strobePhase += current.cents * dt * 2.2;
@@ -534,7 +582,6 @@ export function initTuner() {
   tuning = findTuning(settings.tuningId) || DEFAULT_TUNING;
   setTuning(tuning, false);
   updateRefLabel();
-  $('micBtn').addEventListener('click', () => (running ? stopTuner() : start()));
   $('autoBtn').addEventListener('click', () => { setAuto(!auto); renderStrings(); });
   $('toneBtn').addEventListener('click', toneButton);
   $('tuningBtn').addEventListener('click', openTuningSheet);

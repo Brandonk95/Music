@@ -1,5 +1,5 @@
 import { settings, setSetting } from './settings.js';
-import { initTuner, stopTuner } from './tuner.js';
+import { initTuner, startTuner, stopTuner } from './tuner.js';
 import { initMetronome } from './metronome.js';
 import { initPartyUI, openJoinLink } from './party-ui.js';
 import { initSettingsView } from './settings-view.js';
@@ -20,7 +20,7 @@ function showTab(name) {
   document.querySelectorAll('.tabbar button').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === name));
   if (name !== 'tuner') { stopTuner(); tone.stop(); }
   if (name === 'settings') renderSettings();
-  if (name === 'tuner') window.dispatchEvent(new Event('resize')); // redraw canvases now visible
+  if (name === 'tuner') { window.dispatchEvent(new Event('resize')); startTuner(); } // redraw canvases, listen
   setSetting('tab', name);
 }
 
@@ -38,7 +38,10 @@ initInstall();
 initFit();
 
 // Free the mic when the app is backgrounded.
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopTuner(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopTuner();
+  else if (document.getElementById('view-tuner').classList.contains('active')) startTuner();
+});
 
 // Signing in on a new device: bring over the setup answers saved on the account.
 store.addEventListener('change', () => {

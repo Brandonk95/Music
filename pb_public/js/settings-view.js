@@ -113,7 +113,7 @@ async function render() {
         [pc, `Just in ${noteLabel(60 + pc, settings.noteNames).name}`])], { num: true }), 'Concert key for pure chords'),
       row('Display', select('display', [['needle', 'Needle'], ['strobe', 'Strobe']]), 'Tap the meter to switch'),
       rangeRow('In-tune range', 'tolerance', 1, 10, 1, (v) => `±${v}¢`),
-      rangeRow('Mic sensitivity', 'sensitivity', 1, 10, 1, (v) => v, 'Lower it in noisy rooms'),
+      rangeRow('Mic sensitivity', 'sensitivity', 1, 10, 1, (v) => v, 'Higher keeps listening through other players; lower ignores more background noise'),
       row('Reference tone', select('toneTimbre', [['pluck', 'Plucked string'], ['soft', 'Soft organ'], ['sine', 'Pure sine']])),
       rangeRow('Tone volume', 'toneVolume', 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       row('Play note when tapping a string', toggle('playOnTap'))),
