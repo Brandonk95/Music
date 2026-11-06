@@ -153,6 +153,11 @@ While it runs, the host's controls work for everyone:
   note in tune for the set time and gets a chime; the host watches everyone live (*✓ In tune*,
   *Flat −12¢*, *Sharp +8¢*, *Not playing*). When everyone has, every phone plays a chime and shows
   *Everyone's in tune!*, and the drone stops. The host can **End tuning** at any time.
+- **Hand off host:** the host taps **👑 Hand off host** in the group sheet and picks a user.
+  **For now** lets them lead while you step away; an **👋 I'm back** button appears on your phone to
+  take it straight back. **For good** makes them the leader (they can pass it on); you can still take
+  it back from your group sheet since you started the group. Phones keep their sync either way, and
+  if a stand-in leader leaves, the group goes back to you.
 - **Flash only:** any user can switch their own phone to flash and vibrate without clicks, from the
   group sheet.
 - Users' tempo controls are locked while they're in a group. The host can remove a user with ✕

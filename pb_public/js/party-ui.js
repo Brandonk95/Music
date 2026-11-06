@@ -26,8 +26,9 @@ function syncLine() {
   const drone = party.droneOn ? ` · Drone ${droneName(party.state.drone.pc)}` : '';
   if (party.isHost) {
     const n = party.members.length;
-    return `Host · ${n} ${n === 1 ? 'user' : 'users'}${drone}`;
+    return `${party.isOwner ? 'Host' : 'Leading for now'} · ${n} ${n === 1 ? 'user' : 'users'}${drone}`;
   }
+  if (party.lead) return `${party.lead.name} is leading · ${SYNC_TEXT[party.sync.status] || ''}${drone}`;
   const s = party.sync;
   let text = SYNC_TEXT[s.status] || '';
   if (s.status === 'synced' && s.spreadMs != null) text += ` (±${Math.max(1, Math.round(s.spreadMs))} ms)`;
@@ -204,6 +205,8 @@ function drawDetails(body) {
       h('label', { class: 'field row toggle-row' }, 'Warn me before I could spoil someone’s sync',
         h('input', { type: 'checkbox', class: 'switch', checked: !warningsOff(),
           onchange: (e) => { if (e.target.checked) localStorage.removeItem(WARN_OFF_KEY); else localStorage.setItem(WARN_OFF_KEY, '1'); } })),
+      h('button', { class: 'ghost wide', disabled: !party.liveMembers.length, onclick: () => { close(); openHandOff(); } },
+        '👑 Hand off host'),
       h('button', { class: 'ghost wide danger', onclick: async () => {
         if (!confirm('End the group for everyone?')) return;
         close(); await party.leave({ end: true }); toast('Group ended');
@@ -212,6 +215,8 @@ function drawDetails(body) {
     const st = party.sync.status;
     const busy = st === 'listening' || st === 'calibrating';
     fill(body, ...common,
+      party.isOwner && party.lead && h('button', { class: 'primary wide', onclick: () => { close(); party.takeBack(); } },
+        party.lead.temp ? '👋 I’m back, take host back' : 'Take host back (you started this group)'),
       st === 'failed' && h('p', { class: 'group-sub error' }, party.sync.message || ''),
       party.calib?.phase === 'gather' && !party.calibReady
         && h('button', { class: 'primary wide', onclick: () => { close(); party.markReady(); } }, 'Ready to sync (device next to the host’s)'),
@@ -502,10 +507,58 @@ function celebrate(title, text, { big = true } = {}) {
   setTimeout(() => sheet.close(), big ? 6000 : 4000);
 }
 
+// ---------- handing off the host role ----------
+
+function openHandOff() {
+  let pick = null;
+  const body = h('div', { class: 'form' });
+  const draw = () => {
+    const live = party.liveMembers;
+    const who = live.find((m) => m.id === pick);
+    fill(body,
+      h('p', {}, 'Choose who leads. They get the Start, Pause and Stop buttons, tempo, drone, sync and tuning, everything you have now.'),
+      h('div', { class: 'list' }, live.map((m) => h('button', {
+        class: 'list-row member pick' + (m.id === pick ? ' on' : ''), onclick: () => { pick = m.id; draw(); },
+      }, h('span', { class: 'member-name' }, m.name || 'User'), m.id === pick ? '✓' : ''))),
+      !live.length && h('p', { class: 'hint' }, 'Nobody to hand off to yet.'),
+      party.isOwner && h('button', { class: 'primary wide', disabled: !who, onclick: () => go(false) },
+        who ? `Hand to ${who.name || 'them'} for now` : 'Hand off for now'),
+      party.isOwner && h('p', { class: 'hint' }, 'For now: you get an “I’m back” button to take it back any time, e.g. if you step out for 5 minutes.'),
+      h('button', { class: party.isOwner ? 'ghost wide' : 'primary wide', disabled: !who, onclick: () => go(true) },
+        who ? `Make ${who.name || 'them'} the host for good` : 'Hand off for good'),
+      h('p', { class: 'hint' }, 'For good: they lead from now on and can pass it on. You become a regular user (your phone stays in sync).'));
+  };
+  const go = async (permanent) => {
+    const who = party.liveMembers.find((m) => m.id === pick);
+    if (!who) return;
+    if (permanent && !confirm(`Make ${who.name || 'this user'} the host for good?`)) return;
+    sheet.close();
+    await party.handOff(pick, { permanent });
+  };
+  const sheet = openSheet('Hand off host', body);
+  draw();
+}
+
+function renderBackBtn() {
+  const btn = $('imBackBtn');
+  if (!btn) return;
+  const show = party.active && party.isOwner && !party.isHost && !!party.lead;
+  btn.hidden = !show;
+  if (show) btn.textContent = party.lead.temp ? `👋 I’m back (${party.lead.name} is leading)` : `Take host back from ${party.lead.name}`;
+}
+
 // ---------- init ----------
 
 export function initPartyUI() {
   party.warn = warn;
+  $('groupBar').after(h('button', { id: 'imBackBtn', class: 'primary wide im-back', hidden: true, onclick: () => party.takeBack() }));
+  party.addEventListener('role', (e) => {
+    if (e.detail.lead) {
+      toast(party.isOwner ? 'You’re the host again' : 'You’re leading the group now', 3500);
+      navigator.vibrate?.([60, 40, 60]);
+    } else if (party.lead) toast(`${party.lead.name} is leading now`, 3500);
+    else toast('The host is back', 3000);
+  });
   party.askCalib = askCalib;
   party.addEventListener('calibdone', (e) => showCalibDone(e.detail));
   $('groupBtn').addEventListener('click', openDetails);
@@ -523,6 +576,7 @@ export function initPartyUI() {
     refreshDetails();
     renderCalib();
     drawTuneProgress();
+    renderBackBtn();
     const st = party.active && !party.isHost ? party.sync.status : null;
     if (st !== lastSync) {
       if (st === 'synced' && !party.calib?.phase?.match(/sync|done/)) { toast('In sync with the host'); navigator.vibrate?.(60); }

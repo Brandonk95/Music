@@ -475,3 +475,8 @@ body { position: fixed; inset: 0; display: flex; flex-direction: column; }
 .tune-bar { height: 10px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
 .tune-bar > div { height: 100%; width: 0; background: var(--good); transition: width .2s; }
 .calib-big.done.big { width: 110px; height: 110px; font-size: 60px; }
+
+/* group: hand off host */
+.list-row.pick { width: 100%; text-align: left; justify-content: space-between; }
+.list-row.pick.on { outline: 2px solid var(--accent); }
+.im-back { margin: 6px 0; }

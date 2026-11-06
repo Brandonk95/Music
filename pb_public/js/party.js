@@ -129,7 +129,7 @@ class Party extends EventTarget {
     if (!rec || rec.state?.status === 'ended') throw new Error('No active group with that code');
     const clock = new SyncClock();
     await clock.start();
-    if (!guest && rec.host === store.user.id) return this._enter(rec, true, clock); // host rejoining
+    if (!guest && rec.host === store.user.id && !rec.state?.lead) return this._enter(rec, true, clock); // host rejoining
     if (guest) {
       localStorage.setItem(GUEST_NAME_KEY, guestName);
       this.guestKey = makeGuestKey();
@@ -167,32 +167,121 @@ class Party extends EventTarget {
     this.calibReady = false;
     this._calibKey = ACTIVE_CALIB.includes(rec.state.calib?.phase) ? null : calibKey(rec.state.calib);
     if (!isHost || rec.state.status !== 'idle') this._applyToMet(rec.state);
+    this._controls = { play: () => this.primaryAction(), pause: () => this.pause(), stop: () => this.stop() };
     met.enterGroup({
-      clock, state: this.state, delta: 0, audible: isHost, isHost, flashOnly: !isHost && this.flashOnly,
-      controls: { play: () => this.primaryAction(), pause: () => this.pause(), stop: () => this.stop() },
+      clock, state: this.state, delta: 0, audible: isHost, isHost, flashOnly: !isHost && this.flashOnly, controls: this._controls,
     });
     this._subscribe();
     this._onCalib(rec.state.calib);
     this._tuneDoneId = undefined;
     this._onTuneDone(rec.state.tuneDone);
     this._applySection(rec.state);
+    this._startRoleTimers();
+    wake.request('group');
+    this._emit();
+  }
+
+  _startRoleTimers() {
     this.timers.push(setInterval(() => this._poll(), 4000));
-    if (isHost) {
+    if (this.isHost) {
       this._loadMembers();
       let tick = 0;
       this.timers.push(setInterval(() => {
         if (this.calibActive || this.sectionTune || ++tick % 3 === 0) this._loadMembers();
       }, 1000));
       this._unwatchOutput = this._watchOutput();
+      if (this.member) this.timers.push(setInterval(() => this._heartbeat(), 20000)); // a deputy keeps its record fresh
+    } else this.timers.push(setInterval(() => this._heartbeat(), 20000));
+  }
+
+  // ---------- handing off the host role ----------
+
+  /** This account created the group (it can always take the lead back). */
+  get isOwner() { return !!store.user && !!this.record && this.record.host === store.user.id; }
+  /** { id, name, temp, from } while someone other than the owner leads. */
+  get lead() { return this.state?.lead || null; }
+
+  _shouldLead(state = this.state) {
+    const l = state?.lead;
+    return l ? !!this.member && l.id === this.member.id : this.isOwner;
+  }
+
+  /** Leader: give the host role to a user. temp = the owner can press "I'm back". */
+  async handOff(memberId, { permanent = false } = {}) {
+    if (!this.isHost) return;
+    const m = this.members.find((x) => x.id === memberId);
+    if (!m) return;
+    const lead = { id: m.id, name: m.name || 'A user', temp: !permanent && this.isOwner, from: this.isOwner ? memberName() : (this.lead?.from || '') };
+    await this._push({ ...this.state, lead }, { immediate: true, extra: { deputy: m.id } });
+  }
+
+  /** Owner: take the host role back. */
+  async takeBack() {
+    if (!this.isOwner || !this.lead) return;
+    const state = { ...this.state, lead: null, v: (this.state?.v || 0) + 1 };
+    try {
+      await store.api(`/api/collections/parties/records/${this.record.id}`, { method: 'PATCH', body: JSON.stringify({ state, deputy: '' }) });
+      this._setState(state);
+    } catch (e) { this.dispatchEvent(new CustomEvent('error', { detail: e.message })); }
+  }
+
+  /** Switch this device between leading and following without leaving the group.
+   * The device keeps its audio offset, so nobody has to sync again. */
+  async _switchRole(lead) {
+    if (this._switching) return;
+    this._switching = true;
+    try {
+      const delta = met.group?.delta || 0;
+      const wasSynced = this.isHost || ['synced', 'network'].includes(this.sync.status);
+      this.timers.forEach(clearInterval);
+      this.timers = [];
+      this._unwatchOutput?.();
+      this._unwatchOutput = null;
+      this.isHost = lead;
+      if (!lead && !this.member && this.isOwner) {
+        try { this.member = await this._upsertMember(this.record); } catch { /* list just won't show us */ }
+      } else if (lead && this.member && this.isOwner) {
+        const id = this.member.id;
+        this.member = null;
+        store.api(`/api/collections/party_members/records/${id}`, { method: 'DELETE' }).catch(() => {});
+      }
+      if (!this.record) return;
+      met.exitGroup();
+      this.sync = lead ? { status: 'host' } : wasSynced ? { status: 'synced', delta } : { status: 'idle' };
+      met.enterGroup({
+        clock: this.clock, state: this.state, delta, audible: lead || wasSynced, isHost: lead,
+        flashOnly: !lead && this.flashOnly, controls: this._controls,
+      });
+      this._startRoleTimers();
+      this._applyDrone(this.state);
+      this._applySection(this.state);
+      if (!lead) {
+        this.members = [];
+        this._applyToMet(this.state);
+        if (this.member) this._updateMember({ status: wasSynced ? 'synced' : 'joined' });
+        this._maybeSync();
+      }
+      this.dispatchEvent(new CustomEvent('role', { detail: { lead } }));
+      this._emit();
+    } finally {
+      this._switching = false;
+      // The lead may have moved again meanwhile.
+      if (this.record && this._shouldLead() !== this.isHost) this._switchRole(this._shouldLead());
     }
-    else this.timers.push(setInterval(() => this._heartbeat(), 20000));
-    wake.request('group');
-    this._emit();
   }
 
   async leave({ end = false } = {}) {
     if (!this.record) return;
     const rec = this.record;
+    if (this.isHost && !this.isOwner && !end) {
+      // A stand-in host leaving gives the group back to its owner.
+      const state = { ...this.state, lead: null, v: (this.state?.v || 0) + 1 };
+      try {
+        await store.api(`/api/collections/parties/records/${rec.id}`, {
+          method: 'PATCH', body: JSON.stringify({ state, deputy: '' }), headers: this._memberHeaders(),
+        });
+      } catch { /* owner can still take it back */ }
+    }
     this.timers.forEach(clearInterval);
     clearTimeout(this._deferTimer);
     this.timers = [];
@@ -214,7 +303,7 @@ class Party extends EventTarget {
     this.members = [];
     try {
       if (this.isHost && end) {
-        await store.api(`/api/collections/parties/records/${rec.id}`, { method: 'DELETE' });
+        await store.api(`/api/collections/parties/records/${rec.id}`, { method: 'DELETE', headers: this._memberHeaders() });
       } else if (this.member) {
         await store.api(`/api/collections/party_members/records/${this.member.id}`, { method: 'DELETE', headers: this._memberHeaders() });
       }
@@ -269,6 +358,7 @@ class Party extends EventTarget {
     if (!this.isHost && this.member && state.kicked?.includes(this.member.id)) return this._ended({ kicked: true });
     this.state = state;
     if (met.group) met.group.state = state;
+    if (this.record && !this._switching && this._shouldLead(state) !== this.isHost) this._switchRole(this._shouldLead(state));
     this._applyDrone(state);
     if (!this.isHost) this._applyToMet(state);
     this._onCalib(state.calib);
@@ -291,14 +381,16 @@ class Party extends EventTarget {
 
   // ---------- host controls ----------
 
-  _push(state, { immediate = false } = {}) {
+  _push(state, { immediate = false, extra = {} } = {}) {
     state.v = (this.state?.v || 0) + 1;
+    const id = this.record.id, headers = this._memberHeaders();
     this._setState(state);
     clearTimeout(this._pushTimer);
-    const send = () => store.api(`/api/collections/parties/records/${this.record.id}`, {
-      method: 'PATCH', body: JSON.stringify({ state: this.state }),
+    const send = () => store.api(`/api/collections/parties/records/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ state: this.state || state, ...extra }), headers,
     }).catch((e) => this.dispatchEvent(new CustomEvent('error', { detail: e.message })));
-    if (immediate) send(); else this._pushTimer = setTimeout(send, 150);
+    if (immediate) return send();
+    this._pushTimer = setTimeout(send, 150);
   }
 
   /** Host edited the metronome: share it. Grid changes start on a future downbeat. */
@@ -722,15 +814,16 @@ class Party extends EventTarget {
     this.members = this.members.filter((m) => m.id !== memberId);
     this.dispatchEvent(new Event('members'));
     try {
-      await store.api(`/api/collections/party_members/records/${memberId}`, { method: 'DELETE' });
+      await store.api(`/api/collections/party_members/records/${memberId}`, { method: 'DELETE', headers: this._memberHeaders() });
     } catch (e) { if (e.status !== 404) this.dispatchEvent(new CustomEvent('error', { detail: e.message })); }
   }
 
   async _loadMembers() {
     try {
       const f = encodeURIComponent(`party="${this.record.id}"`);
-      const r = await store.api(`/api/collections/party_members/records?filter=${f}&perPage=200&sort=created`);
-      this.members = r.items;
+      const r = await store.api(`/api/collections/party_members/records?filter=${f}&perPage=200&sort=created`, { headers: this._memberHeaders() });
+      if (!this.isHost) return;
+      this.members = r.items.filter((m) => m.id !== this.member?.id); // a stand-in host isn't one of its own users
       this.dispatchEvent(new Event('members'));
       this._checkCalib();
       this._checkTune();
