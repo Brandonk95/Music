@@ -236,7 +236,11 @@ export class Metronome extends EventTarget {
     }
     if (!this.playing) { this.playing = true; this._emit('state'); }
     if (!this.soundSet) return;
-    const now = g.clock.serverNow();
+    // Beats play at their server time + delta, so look for the beats whose
+    // shifted time falls in the next LOOKAHEAD. Without this shift, a phone
+    // whose own audio is much slower than the host's (delta < -LOOKAHEAD,
+    // common on Android) scheduled every click in the past and stayed silent.
+    const now = g.clock.serverNow() - (g.delta || 0) * 1000;
     const A = Math.max(this.groupUntil ?? now, now);
     const B = now + LOOKAHEAD * 1000;
     if (B <= A) return;
