@@ -5,6 +5,7 @@ import { met } from './metronome.js';
 import { store } from './store.js';
 import { h, fill, $, toast, openSheet } from './ui.js';
 import { settings } from './settings.js';
+import { sectionNoteNames } from './tuner.js';
 
 const SYNC_TEXT = {
   idle: 'Joined',
@@ -65,7 +66,7 @@ function tuneBadge(m) {
 function droneControls() {
   const d = party.state?.drone || {};
   const on = !!d.on;
-  return h('div', {},
+  return h('div', { class: 'drone-box' },
     h('div', { class: 'chips drone-chips' },
       h('button', { class: 'chip' + (!on ? ' on' : ''), onclick: () => party.setDrone(null) }, 'Off'),
       DRONE_NOTES.map(([pc, name]) => h('button', {
@@ -75,10 +76,7 @@ function droneControls() {
     h('label', { class: 'field row toggle-row' }, 'Add a perfect 5th',
       h('input', { type: 'checkbox', class: 'switch', checked: !!d.fifth,
         onchange: (e) => party.setDroneFifth(e.target.checked) })),
-    h('label', { class: 'field row toggle-row' }, 'Section tuning: everyone’s tuner locks to this note',
-      h('input', { type: 'checkbox', class: 'switch', checked: !!d.section,
-        onchange: (e) => party.setDroneSection(e.target.checked) })),
-    d.section && h('p', { class: 'hint' }, 'Users’ phones open the tuner and show how far they are from your note; you see everyone’s reading below. The drone then plays only on your phone.'),
+
     h('p', { class: 'hint' }, 'Concert pitch, on every phone, tuned to your A4. Runs until you turn it off, even while the metronome is stopped.'));
 }
 
@@ -184,6 +182,9 @@ function drawDetails(body) {
       qrBlock(party.code),
       h('button', { class: 'primary wide', disabled: party.calibActive || !party.members.length, onclick: () => { close(); party.startCalibration(); } },
         '🔊 Sync everyone by sound'),
+      h('button', { class: 'primary wide', disabled: !party.members.length || party.calibActive,
+        onclick: () => { close(); party.tuneSession ? openTuneProgress() : openTuneSetup(); } },
+        party.tuneSession ? '🎯 Section tuning (running)' : '🎯 Tune the section'),
       h('h3', {}, 'Tuning drone'),
       droneControls(),
       h('h3', {}, `Users (${party.members.length})`),
@@ -407,6 +408,100 @@ function showCalibDone({ calib: c, mine }) {
   if (mine) setTimeout(() => sheet.close(), 6000);
 }
 
+// ---------- section tuning ----------
+
+const TUNE_NOTE_KEY = 'tt.sectionNote';
+const TUNE_HOLD_KEY = 'tt.sectionHold';
+
+/** Host step 1: pick the note and how long everyone must hold it. */
+function openTuneSetup() {
+  let pc = Number(localStorage.getItem(TUNE_NOTE_KEY) ?? 10);
+  let hold = Number(localStorage.getItem(TUNE_HOLD_KEY) || 5);
+  const body = h('div', { class: 'form' });
+  const draw = () => fill(body,
+    h('ol', { class: 'steps' },
+      h('li', {}, 'Pick the note. Everyone’s phone opens the tuner locked to it (shown as their own written note).'),
+      h('li', {}, 'Only your phone plays the drone, so everyone can hear the pitch.'),
+      h('li', {}, `Each player holds the note in tune for ${hold} seconds. You see everyone live.`),
+      h('li', {}, 'When everyone has, all phones celebrate and the drone stops.')),
+    h('h3', {}, 'Note (concert pitch)'),
+    h('div', { class: 'chips drone-chips' }, DRONE_NOTES.map(([p, name]) => h('button', {
+      class: 'chip' + (p === pc ? ' on' : ''), onclick: () => { pc = p; draw(); } }, name))),
+    h('h3', {}, 'Hold in tune for'),
+    h('div', { class: 'chips' }, [3, 5, 10].map((s) => h('button', {
+      class: 'chip' + (s === hold ? ' on' : ''), onclick: () => { hold = s; draw(); } }, `${s} s`))),
+    h('button', { class: 'primary wide', onclick: async () => {
+      localStorage.setItem(TUNE_NOTE_KEY, pc);
+      localStorage.setItem(TUNE_HOLD_KEY, hold);
+      sheet.close();
+      await party.startSectionTuning({ pc, hold });
+      if (party.tuneSession) openTuneProgress();
+    } }, `Start tuning to concert ${droneName(pc)}`));
+  const sheet = openSheet('Tune the section', body);
+  draw();
+}
+
+let tuneSheet = null;
+
+function tuneRow(m, id) {
+  const tuned = m.tunedId === id;
+  return h('div', { class: 'list-row member' },
+    h('span', { class: 'member-name' }, m.name || 'User'),
+    tuned ? h('span', { class: 'member-status tune-good' }, '✓ In tune') : tuneBadge(m));
+}
+
+/** Host: live view of everyone during section tuning. */
+function openTuneProgress() {
+  if (tuneSheet) return;
+  const body = h('div', { class: 'form' });
+  tuneSheet = openSheet('Section tuning', body, { onClose: () => { tuneSheet = null; } });
+  drawTuneProgress();
+}
+
+function drawTuneProgress() {
+  const d = party.tuneSession;
+  if (!tuneSheet) return;
+  if (!d) { tuneSheet.close(); return; }
+  const live = party.liveMembers;
+  const done = party.tunedMembers.length;
+  fill(tuneSheet.body.firstChild,
+    h('div', { class: 'tune-note' }, droneName(d.pc), h('small', {}, 'concert')),
+    h('p', { class: 'calib-lead' }, `${done} of ${live.length} in tune`),
+    h('div', { class: 'tune-bar' }, h('div', { style: `width:${live.length ? (100 * done) / live.length : 0}%` })),
+    h('p', { class: 'group-sub' }, `Each player holds the note in tune for ${d.hold || 5} s.`),
+    live.length ? h('div', { class: 'list' }, live.map((m) => tuneRow(m, d.tuneId))) : h('p', { class: 'hint' }, 'Nobody has joined yet.'),
+    h('button', { class: 'ghost wide danger', onclick: () => party.endSectionTuning() }, 'End tuning'));
+}
+
+let introSheet = null;
+
+/** Users: what to do, shown when the host starts section tuning. */
+function showTuneIntro(pc, hold) {
+  introSheet?.close();
+  const n = sectionNoteNames(pc);
+  const bar = h('div', {});
+  const sheet = openSheet('Section tuning', h('div', { class: 'form' },
+    h('div', { class: 'tune-note' }, n.yours, h('small', {}, n.transposed ? `your note · concert ${n.concert}` : 'concert')),
+    h('ol', { class: 'steps' },
+      h('li', {}, `Play your ${n.yours} and hold it steady.`),
+      h('li', {}, 'Watch the tuner: push in or pull out until it turns green.'),
+      h('li', {}, `Hold it green for ${hold} seconds. You’ll hear a chime.`)),
+    h('div', { class: 'tune-bar' }, bar),
+    h('button', { class: 'primary wide', onclick: () => sheet.close() }, 'Got it')),
+  { onClose: () => { clearInterval(t); if (introSheet === sheet) introSheet = null; } });
+  introSheet = sheet;
+  const t = setInterval(() => { bar.style.width = `${Math.round((party.tuneProgress || 0) * 100)}%`; }, 150);
+}
+
+function celebrate(title, text, { big = true } = {}) {
+  introSheet?.close();
+  const sheet = openSheet(title, h('div', { class: 'form' },
+    h('div', { class: 'calib-big done' + (big ? ' big' : '') }, '✓'),
+    h('p', { class: 'calib-lead' }, text),
+    h('button', { class: 'primary wide', onclick: () => sheet.close() }, 'OK')));
+  setTimeout(() => sheet.close(), big ? 6000 : 4000);
+}
+
 // ---------- init ----------
 
 export function initPartyUI() {
@@ -427,6 +522,7 @@ export function initPartyUI() {
     renderBar();
     refreshDetails();
     renderCalib();
+    drawTuneProgress();
     const st = party.active && !party.isHost ? party.sync.status : null;
     if (st !== lastSync) {
       if (st === 'synced' && !party.calib?.phase?.match(/sync|done/)) { toast('In sync with the host'); navigator.vibrate?.(60); }
@@ -435,8 +531,17 @@ export function initPartyUI() {
     }
   });
   let sectionFrom = null;
+  party.addEventListener('tuned', () => celebrate('You’re in tune!', 'Nice. Waiting for the others…', { big: false }));
+  party.addEventListener('tunedone', (e) => {
+    tuneSheet?.close();
+    const n = e.detail.n;
+    celebrate('Everyone’s in tune!', party.isHost
+      ? `All ${n} ${n === 1 ? 'player' : 'players'} held concert ${droneName(e.detail.pc)} in tune.`
+      : 'The whole section is in tune. 🎉');
+  });
   party.addEventListener('section', (e) => {
-    const { on, pc, changed } = e.detail;
+    const { on, pc, hold, changed, fresh } = e.detail;
+    if (on && fresh) setTimeout(() => party.sectionTune && showTuneIntro(pc, hold), changed ? 350 : 0);
     const tab = (name) => document.querySelector(`.tabbar button[data-tab="${name}"]`);
     const current = document.querySelector('.tabbar button[aria-selected="true"]')?.dataset.tab;
     if (on) {
@@ -448,7 +553,7 @@ export function initPartyUI() {
       sectionFrom = null;
     }
   });
-  party.addEventListener('members', () => { renderBar(); refreshDetails(); renderCalib(); });
+  party.addEventListener('members', () => { renderBar(); refreshDetails(); renderCalib(); drawTuneProgress(); });
   party.addEventListener('ended', (e) => {
     if (e.detail.kicked) toast('The host removed you from the group');
     else if (!e.detail.wasHost) toast('The host ended the group');

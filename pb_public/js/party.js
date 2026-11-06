@@ -36,10 +36,10 @@ const CALIB_TIMEOUT = 45000; // ms the sync step may take before the host wraps 
 const ACTIVE_CALIB = ['gather', 'sync'];
 
 /** Short rising chime that says "sync complete". */
-export function playChime({ ok = true } = {}) {
+export function playChime({ ok = true, short = false } = {}) {
   const ctx = getCtx();
   const t0 = ctx.currentTime + 0.05;
-  const notes = ok ? [523.25, 659.25, 783.99, 1046.5] : [659.25, 523.25];
+  const notes = !ok ? [659.25, 523.25] : short ? [783.99, 1046.5] : [523.25, 659.25, 783.99, 1046.5];
   const out = ctx.createGain();
   out.gain.value = 0.5;
   out.connect(ctx.destination);
@@ -173,6 +173,8 @@ class Party extends EventTarget {
     });
     this._subscribe();
     this._onCalib(rec.state.calib);
+    this._tuneDoneId = undefined;
+    this._onTuneDone(rec.state.tuneDone);
     this._applySection(rec.state);
     this.timers.push(setInterval(() => this._poll(), 4000));
     if (isHost) {
@@ -271,6 +273,7 @@ class Party extends EventTarget {
     if (!this.isHost) this._applyToMet(state);
     this._onCalib(state.calib);
     this._applySection(state);
+    this._onTuneDone(state.tuneDone);
     if (!this.isHost) this._maybeSync();
     this._emit();
   }
@@ -550,7 +553,11 @@ class Party extends EventTarget {
     if (!this.isHost) return;
     if (note && !this.droneOn && !(await this._guard('drone'))) return;
     if (!this.record) return;
-    const drone = note ? { on: true, pc: note.pc, fifth: !!note.fifth, section: !!this.state.drone?.section } : { ...(this.state.drone || {}), on: false };
+    const old = this.state.drone || {};
+    const section = !!(note && old.on && old.section); // a running section tuning follows the new note
+    const drone = note
+      ? { ...old, on: true, pc: note.pc, fifth: !!note.fifth, section, tuneId: section && note.pc !== old.pc ? Date.now() : old.tuneId }
+      : { ...old, on: false, section: false };
     this._push({ ...this.state, drone, a4: settings.a4 }, { immediate: true });
   }
 
@@ -584,17 +591,67 @@ class Party extends EventTarget {
     return d?.on && d.section ? { pc: d.pc, a4: this.state.a4 || 440 } : null;
   }
 
-  /** Host: lock everyone's tuner to the drone note (the drone then plays only on the host's phone). */
-  setDroneSection(on) {
+  /** The running section tuning (the drone record), or null. */
+  get tuneSession() {
+    const d = this.state?.drone;
+    return d?.on && d.section ? d : null;
+  }
+
+  /** Host: start section tuning. Everyone's tuner locks to pc; done once all have held it in tune for `hold` s. */
+  async startSectionTuning({ pc, hold = 5 }) {
     if (!this.isHost) return;
-    this._push({ ...this.state, drone: { ...(this.state.drone || { on: false, pc: 10 }), section: !!on }, a4: settings.a4 }, { immediate: true });
+    if (!this.droneOn && !(await this._guard('drone'))) return;
+    if (!this.record) return;
+    const old = this.state.drone || {};
+    this._push({
+      ...this.state, a4: settings.a4,
+      drone: { ...old, on: true, pc, fifth: !!old.fifth, section: true, tuneId: Date.now(), hold, tol: settings.tolerance },
+    }, { immediate: true });
+    this._loadMembers();
+  }
+
+  /** Host: stop section tuning (and its drone) without the "everyone's in tune" finish. */
+  endSectionTuning() {
+    if (!this.isHost || !this.tuneSession) return;
+    this._push({ ...this.state, drone: { ...this.state.drone, on: false, section: false } }, { immediate: true });
+  }
+
+  /** Users who have held the note in tune in this session. */
+  get tunedMembers() {
+    const id = this.tuneSession?.tuneId;
+    return id ? this.liveMembers.filter((m) => m.tunedId === id) : [];
+  }
+
+  _checkTune() {
+    const d = this.tuneSession;
+    if (!this.isHost || !d) return;
+    const live = this.liveMembers;
+    if (live.length && live.every((m) => m.tunedId === d.tuneId)) {
+      this._push({
+        ...this.state,
+        drone: { ...d, on: false, section: false },
+        tuneDone: { id: d.tuneId, n: live.length, pc: d.pc },
+      }, { immediate: true });
+    }
+  }
+
+  /** Both sides: once per finished section tuning. */
+  _onTuneDone(t) {
+    const id = t?.id ?? null;
+    if (id === this._tuneDoneId) return;
+    const first = this._tuneDoneId === undefined;
+    this._tuneDoneId = id;
+    if (first || !t) return; // just joined: don't replay an old finish
+    try { playChime({ ok: true }); } catch { /* no audio */ }
+    navigator.vibrate?.([40, 60, 40, 60, 120]);
+    this.dispatchEvent(new CustomEvent('tunedone', { detail: t }));
   }
 
   /** Members: point the tuner at the host's note and report how far off they are. */
   _applySection(s) {
     const d = s?.drone;
-    const t = !this.isHost && d?.on && d.section ? { pc: d.pc, a4: s.a4 || 440 } : null;
-    const key = t ? `${t.pc}:${t.a4}` : null;
+    const t = !this.isHost && d?.on && d.section ? { pc: d.pc, a4: s.a4 || 440, id: d.tuneId, hold: d.hold || 5, tol: d.tol || 5 } : null;
+    const key = t ? `${t.pc}:${t.a4}:${t.id}` : null;
     if (key === this._sectionKey) return;
     const was = this._sectionKey;
     this._sectionKey = key;
@@ -604,13 +661,30 @@ class Party extends EventTarget {
     if (t) {
       this._reading = null;
       this._sent = undefined;
-      this._onReading = (e) => { this._reading = e.detail ? { cents: e.detail.cents, at: Date.now() } : this._reading; };
+      let since = 0, done = false;
+      this._onReading = (e) => {
+        const now = Date.now();
+        if (e.detail) this._reading = { cents: e.detail.cents, at: now };
+        // Held in tune for `hold` seconds without a break: this user is done.
+        if (e.detail && Math.abs(e.detail.cents) <= t.tol) {
+          if (!since) since = now;
+          if (!done && now - since >= t.hold * 1000) {
+            done = true;
+            this._updateMember({ tunedId: t.id });
+            try { playChime({ ok: true, short: true }); } catch { /* no audio */ }
+            navigator.vibrate?.([40, 60, 40]);
+            this.dispatchEvent(new CustomEvent('tuned'));
+          }
+        } else since = 0;
+        this.tuneProgress = done ? 1 : since ? Math.min(1, (now - since) / (t.hold * 1000)) : 0;
+      };
       tunerEvents.addEventListener('reading', this._onReading);
       this._sectionTimer = setInterval(() => this._reportTuning(), 1000);
     } else if (was && this.member) {
       this._updateMember({ tuneCents: 0, tuneAt: 0 });
     }
-    this.dispatchEvent(new CustomEvent('section', { detail: { on: !!t, pc: t?.pc, changed: !!was !== !!t } }));
+    this.tuneProgress = 0;
+    this.dispatchEvent(new CustomEvent('section', { detail: { on: !!t, pc: t?.pc, hold: t?.hold, changed: !!was !== !!t, fresh: key !== was } }));
   }
 
   _reportTuning() {
@@ -659,6 +733,7 @@ class Party extends EventTarget {
       this.members = r.items;
       this.dispatchEvent(new Event('members'));
       this._checkCalib();
+      this._checkTune();
     } catch { /* keep last list */ }
   }
 

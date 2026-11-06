@@ -465,3 +465,13 @@ body { position: fixed; inset: 0; display: flex; flex-direction: column; }
 .member-status.tune-close { color: var(--close); font-weight: 600; }
 .member-status.tune-far { color: var(--far); font-weight: 600; }
 .member-status.tune-idle { color: var(--muted); }
+
+/* group: section tuning walkthrough */
+.drone-box { display: flex; flex-direction: column; gap: 14px; }
+.drone-box .toggle-row { min-height: 40px; gap: 12px; }
+.steps { margin: 0 0 4px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; color: var(--text); }
+.tune-note { text-align: center; font-size: 64px; font-weight: 700; line-height: 1; margin: 4px 0; }
+.tune-note small { display: block; font-size: 14px; font-weight: 500; color: var(--muted); margin-top: 4px; }
+.tune-bar { height: 10px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+.tune-bar > div { height: 100%; width: 0; background: var(--good); transition: width .2s; }
+.calib-big.done.big { width: 110px; height: 110px; font-size: 60px; }

@@ -39,6 +39,16 @@ export function setGroupTarget(t) {
   else if ($('noteDisplay')) $('concertLabel').textContent = sectionLine();
 }
 
+/** How a concert pitch class reads on this player's instrument: { yours, concert, transposed }. */
+export function sectionNoteNames(pc) {
+  const tr = stringMidis.length ? 0 : transposeOf();
+  return {
+    yours: noteLabel(60 + pc + tr, settings.noteNames).name,
+    concert: noteLabel(60 + pc, settings.noteNames).name,
+    transposed: !!tr,
+  };
+}
+
 function sectionLine() {
   if (!groupTarget) return '';
   const tr = stringMidis.length ? 0 : transposeOf();
