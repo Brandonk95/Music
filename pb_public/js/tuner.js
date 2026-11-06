@@ -281,18 +281,54 @@ function configureAnalyser() {
 
 let starting = false, wanted = false, tapRetry = null;
 
-/** Called when the Tuner tab is shown: listen straight away. */
-export function startTuner() {
-  wanted = true;
-  start();
+const IN_APP = /FBAN|FBAV|Instagram|Snapchat|Line\/|TikTok|musical_ly|; wv\)/i.test(navigator.userAgent);
+
+async function micPermission() {
+  try { return (await navigator.permissions.query({ name: 'microphone' })).state; } catch { return 'unknown'; }
 }
 
-/** If the browser needs a tap first (audio unlock or mic prompt), wait for one anywhere. */
-function needTap(text) {
+/** Called when the Tuner tab is shown. Listens at once if the mic is already allowed;
+ * otherwise waits for a tap, so the browser's permission prompt shows up when the
+ * user expects it (prompts dismissed by accident get the site blocked for days). */
+export async function startTuner() {
+  wanted = true;
+  if (running || starting) return;
+  if (IN_APP) return needTap('Open this page in Chrome or Safari to use the mic. Tap for help', showMicHelp);
+  const p = await micPermission();
+  if (!wanted) return;
+  if (p === 'granted') return start();
+  if (p === 'denied') return needTap('Microphone is blocked. Tap here to fix it', showMicHelp);
+  needTap('Tap anywhere to turn on the microphone');
+}
+
+/** Wait for a tap anywhere, then run `action` inside that tap (browsers only allow
+ * audio and permission prompts from a real tap; pointerdown doesn't count on phones). */
+function needTap(text, action = start) {
   $('tuneHint').textContent = text;
-  if (tapRetry) return;
-  tapRetry = () => { document.removeEventListener('pointerdown', tapRetry, true); tapRetry = null; if (wanted) start(); };
-  document.addEventListener('pointerdown', tapRetry, true);
+  if (tapRetry) document.removeEventListener('click', tapRetry, true);
+  tapRetry = () => { document.removeEventListener('click', tapRetry, true); tapRetry = null; if (wanted) action(); };
+  document.addEventListener('click', tapRetry, true);
+}
+
+function showMicHelp() {
+  const android = /Android/i.test(navigator.userAgent);
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const steps = IN_APP
+    ? ['This page is open inside another app (like Instagram or Snapchat), which can’t use the microphone.',
+      `Tap the ⋮ or share menu and choose “Open in ${ios ? 'Safari' : 'Chrome'}” (or copy the link into ${ios ? 'Safari' : 'Chrome'}).`]
+    : ios
+      ? ['Tap “aA” (or the page settings icon) in the address bar → Website Settings → Microphone → Allow.',
+        'Or open the Settings app → Safari → Microphone → Ask or Allow.',
+        'Then come back and tap Try again.']
+      : android
+        ? ['Tap the icon left of the web address (🔒 or ⚙) → Permissions → Microphone → Allow.',
+          'Installed app: open Chrome → ⋮ → Settings → Site settings → Microphone, find this site and allow it.',
+          'If you closed the permission popup a few times, Chrome blocks it for a while; allowing it here fixes that.',
+          'Also check Android Settings → Apps → Chrome → Permissions → Microphone is allowed.']
+        : ['Click the icon left of the web address → Site settings → Microphone → Allow, then reload.'];
+  const sheet = openSheet('Turn on the microphone', h('div', { class: 'form' },
+    h('ol', { class: 'steps' }, steps.map((t) => h('li', {}, t))),
+    !IN_APP && h('button', { class: 'primary wide', onclick: () => { sheet.close(); wanted = true; start(); } }, 'Try again')));
 }
 
 async function start() {
@@ -304,21 +340,29 @@ async function start() {
   starting = true;
   try {
     const ctx = getCtx();
-    // resume() only finishes after a user gesture, so don't wait on it forever.
-    if (ctx.state !== 'running') {
-      await Promise.race([unlock(), new Promise((r) => setTimeout(r, 300))]);
-      if (ctx.state !== 'running') return needTap('Tap anywhere to start tuning');
-    }
+    // Both calls start right away, inside the user's tap when there is one.
+    const resumed = ctx.state !== 'running' ? ctx.resume().catch(() => {}) : null;
+    let s;
     try {
       setMicActive(true);
-      stream = await navigator.mediaDevices.getUserMedia({
+      s = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
     } catch (e) {
       setMicActive(false);
-      return needTap(e.name === 'NotAllowedError' ? 'Allow the microphone, then tap here' : `Mic error: ${e.message}`);
+      if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
+        return needTap('Microphone is blocked. Tap here to fix it', showMicHelp);
+      }
+      return needTap(e.name === 'NotFoundError' ? 'No microphone found. Tap to try again' : `Mic error: ${e.message}. Tap to retry`);
     }
-    if (!wanted) { stream.getTracks().forEach((t) => t.stop()); setMicActive(false); return; }
+    if (resumed) await Promise.race([resumed, new Promise((r) => setTimeout(r, 500))]);
+    if (!wanted || ctx.state !== 'running') {
+      s.getTracks().forEach((t) => t.stop());
+      setMicActive(false);
+      if (wanted) needTap('Tap anywhere to start tuning');
+      return;
+    }
+    stream = s;
     listen(ctx);
   } finally { starting = false; }
 }
@@ -341,7 +385,7 @@ function listen(ctx) {
 
 export function stopTuner() {
   wanted = false;
-  if (tapRetry) { document.removeEventListener('pointerdown', tapRetry, true); tapRetry = null; }
+  if (tapRetry) { document.removeEventListener('click', tapRetry, true); tapRetry = null; }
   if (!running) return;
   running = false;
   cancelAnimationFrame(rafId);
