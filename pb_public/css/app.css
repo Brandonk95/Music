@@ -480,3 +480,13 @@ body { position: fixed; inset: 0; display: flex; flex-direction: column; }
 .list-row.pick { width: 100%; text-align: left; justify-content: space-between; }
 .list-row.pick.on { outline: 2px solid var(--accent); }
 .im-back { margin: 6px 0; }
+
+/* settings: chip choices, steppers, advanced */
+.chips.seg { margin: 6px 0 2px; }
+.stepper-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.stepper-row .step-val { white-space: nowrap; min-width: 84px; text-align: center; font-size: 18px; }
+.stepper-row .chip { margin-left: auto; }
+.card.advanced { margin-top: 22px; padding-bottom: 10px; }
+.card.advanced summary { cursor: pointer; padding: 12px 0; font-weight: 600; color: var(--muted); }
+.card.advanced[open] summary { border-bottom: 1px solid var(--line); }
+.card.advanced .danger { margin-top: 10px; }

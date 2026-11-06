@@ -44,6 +44,12 @@ export function setSetting(key, value) {
   listeners.forEach((fn) => fn(key, value));
 }
 
+/** Back to defaults (keeps the server, open tab and chosen instrument). */
+export function resetSettings() {
+  const keep = { serverUrl: settings.serverUrl, tab: settings.tab, tuningId: settings.tuningId };
+  for (const [k, v] of Object.entries({ ...DEFAULTS, ...keep })) setSetting(k, v);
+}
+
 export function onSetting(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);

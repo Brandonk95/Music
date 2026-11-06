@@ -368,6 +368,7 @@ async function start() {
 }
 
 function listen(ctx) {
+  noiseFloor = 0; // relearn the room each time the mic starts
   source = ctx.createMediaStreamSource(stream);
   const lp = ctx.createBiquadFilter();
   lp.type = 'lowpass';
@@ -401,6 +402,7 @@ export function stopTuner() {
 }
 
 let jumpTo = 0;
+let noiseFloor = 0; // room background level (RMS), learned while listening
 const median = (arr) => {
   const s = [...arr].sort((a, b) => a - b);
   return s[s.length >> 1];
@@ -413,8 +415,13 @@ function frame(now) {
   lastFrameTime = now;
 
   analyser.getFloatTimeDomainData(buf);
-  const gateDb = -74 + (10 - settings.sensitivity) * 4.5; // sensitivity 10 => -74 dBFS
-  const minRms = Math.pow(10, gateDb / 20);
+  // Two gates: a fixed level from the sensitivity setting, and one that follows
+  // the room. A sound must be clearly louder than the room's own background
+  // (about 10 dB), so a quiet room shows nothing instead of reading every
+  // little noise. Once a note is showing, it may fade a little before it drops.
+  const gateDb = -70 + (10 - settings.sensitivity) * 4.5; // sensitivity 10 => -70 dBFS, 6 => -52
+  const roomGate = noiseFloor * 3.2;
+  const minRms = Math.max(Math.pow(10, gateDb / 20), roomGate) * (current ? 0.6 : 1);
   const minFreq = stringMidis.length ? Math.max(25, midiToFreq(Math.min(...stringMidis) - 7, settings.a4))
     : tuning.low != null ? Math.max(25, midiToFreq(tuning.low - 5, settings.a4)) : 27;
   const r = detector.detect(buf, { minFreq, maxFreq: 4200, minRms });
@@ -426,6 +433,9 @@ function frame(now) {
   const med0 = freqWindow.length ? median(freqWindow) : 0;
   const nearLock = med0 && r.freq && Math.abs(1200 * Math.log2(r.freq / med0)) < 60;
   const ok = r.freq && r.clarity > (nearLock ? needClarity - 0.15 : needClarity);
+  // Learn the room's background level from frames that aren't a clear note:
+  // falls quickly when the room gets quieter, rises slowly when it gets noisier.
+  if (!ok && r.rms > 0) noiseFloor = noiseFloor ? noiseFloor + (r.rms - noiseFloor) * (r.rms < noiseFloor ? 0.2 : 0.01) : r.rms;
 
   let freq = 0;
   if (ok) {

@@ -190,7 +190,7 @@ Notes:
 - Cents and Hz readout, in-tune lock with a ✓ per string
 - A4 calibration 415–466 Hz, sharps/flats/solfège names, B♭/E♭/F transposition
 - Reference tones: per-string drone, plus a pitch pipe for chromatic mode
-- Adjustable in-tune range and mic sensitivity
+- Adjustable in-tune range and a "Where are you playing?" choice (quiet room, normal, band room); the tuner learns the room's background noise and ignores it, so a quiet room shows nothing
 
 **Metronome**
 - 20–400 BPM: drag the number, tap it to type, +/- (hold to repeat), slider, tap tempo
