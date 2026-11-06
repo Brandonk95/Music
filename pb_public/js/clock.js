@@ -1,6 +1,6 @@
 // Shared time for the group metronome.
 //
-// serverNow():  the PocketBase server's clock, estimated NTP-style from
+// serverNow():  the shared clock, estimated NTP-style from
 //               round trips to /api/time (lowest-latency samples win).
 // toCtx(ms):    converts a server time to the AudioContext time at which a
 //               sound must be scheduled to be *heard* at that moment.

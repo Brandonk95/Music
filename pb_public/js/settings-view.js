@@ -1,4 +1,4 @@
-// Settings tab: account (PocketBase), tuner and metronome preferences.
+// Settings tab: account, tuner and metronome preferences.
 import { settings, setSetting, resetSettings } from './settings.js';
 import { installHelp, installMode, installEvents } from './install.js';
 import { store } from './store.js';
@@ -57,15 +57,15 @@ const rangeRow = (label, key, min, max, step, fmt, hint) => {
 };
 
 async function accountSection() {
-  const box = h('div', { class: 'card' }, h('p', { class: 'hint' }, 'Checking server…'));
+  const box = h('div', { class: 'card' }, h('p', { class: 'hint' }, 'Checking connection…'));
   const online = await store.health();
-  const status = h('div', { class: 'status ' + (online ? 'ok' : 'off') }, online ? 'Server connected' : 'Server offline — using this device only');
+  const status = h('div', { class: 'status ' + (online ? 'ok' : 'off') }, online ? 'Online' : 'Offline: using this device only');
 
   if (store.loggedIn) {
     const local = store.localCount();
     fill(box, status,
       h('p', {}, 'Signed in as ', h('b', {}, store.user?.email || 'user')),
-      h('p', { class: 'hint' }, 'Presets, setlists and custom tunings sync to your PocketBase account.'),
+      h('p', { class: 'hint' }, 'Presets, setlists and custom tunings sync to your account.'),
       local > 0 && h('button', { class: 'primary wide', onclick: async () => {
         try { const n = await store.uploadLocal(); toast(`Moved ${n} item(s) to your account`); render(); } catch (e) { toast(e.message); }
       } }, `Upload ${local} item(s) saved on this device`),
@@ -161,10 +161,6 @@ async function render() {
         [pc, `Just in ${noteLabel(60 + pc, settings.noteNames).name}`])], { num: true }), 'Concert key for pure chords'),
       row('Meter style', select('display', [['needle', 'Needle'], ['strobe', 'Strobe']]), 'You can also tap the meter to switch'),
       rangeRow('Exact mic sensitivity', 'sensitivity', 1, 10, 1, (v) => v, 'Fine-tunes “Where are you playing?” above'),
-      h('div', { class: 'set-row stack' },
-        h('div', { class: 'set-label' }, 'Server URL', h('small', {}, 'Leave blank when PocketBase serves this app')),
-        h('input', { class: 'text-input', placeholder: location.origin, value: settings.serverUrl, inputmode: 'url',
-          onchange: (e) => { setSetting('serverUrl', e.target.value.trim()); render(); } })),
       h('button', { class: 'ghost wide danger', type: 'button', onclick: () => {
         if (!confirm('Reset all tuner and metronome settings to their defaults? Your account, presets and setlists stay.')) return;
         resetSettings();

@@ -1,6 +1,6 @@
 // Saved presets, setlists and custom tunings.
 // Signed out: kept in localStorage on the device.
-// Signed in: stored in PocketBase (collection "presets"), with an offline read cache.
+// Signed in: stored in the account (collection "presets"), with an offline read cache.
 import { settings } from './settings.js';
 
 const AUTH_KEY = 'tt.auth';

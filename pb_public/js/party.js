@@ -1,7 +1,7 @@
 // Group metronome ("party"): a host and members share one beat grid.
 //
 // - The host's party record holds the grid (see metronome-engine.js) and the
-//   sound settings. Members follow it over PocketBase realtime (+ polling).
+//   sound settings. Members follow it over realtime updates (+ polling).
 // - Every device keeps a SyncClock locked to the server, so all of them
 //   compute the same beat times.
 // - Each member then listens to the host through the mic once (acoustic
