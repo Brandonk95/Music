@@ -448,3 +448,14 @@ body { position: fixed; inset: 0; display: flex; flex-direction: column; }
   .bpm { font-size: clamp(48px, 18dvh, 110px); }
   .play { width: clamp(52px, 16dvh, 76px); height: clamp(52px, 16dvh, 76px); }
 }
+
+/* group: sync everyone by sound */
+.calib-big { font-size: 56px; text-align: center; line-height: 1.1; margin: 4px 0; }
+.calib-big.pulse { animation: calib-pulse 1.6s ease-in-out infinite; }
+.calib-big.done { width: 84px; height: 84px; margin: 4px auto; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 44px; font-weight: 700; background: var(--good); color: #062; animation: calib-pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+.calib-lead { font-size: 18px; text-align: center; margin: 4px 0 8px; }
+.big-ready { font-size: 22px; padding: 18px; }
+.member-status.s-ready { color: var(--good); }
+@keyframes calib-pulse { 50% { transform: scale(1.12); opacity: .75; } }
+@keyframes calib-pop { from { transform: scale(.3); opacity: 0; } }

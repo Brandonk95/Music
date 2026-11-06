@@ -16,7 +16,7 @@ const SYNC_TEXT = {
   host: 'You\'re the host',
 };
 
-const MEMBER_TEXT = { joined: 'Joined', listening: 'Syncing…', synced: 'In sync', failed: 'Can\'t hear you', network: 'No mic' };
+const MEMBER_TEXT = { joined: 'Joined', ready: 'Ready', listening: 'Syncing…', synced: 'In sync', failed: 'Can\'t hear you', network: 'No mic' };
 
 let detailsSheet = null;
 
@@ -166,6 +166,8 @@ function drawDetails(body) {
   if (party.isHost) {
     fill(body, ...common,
       qrBlock(party.code),
+      h('button', { class: 'primary wide', disabled: party.calibActive || !party.members.length, onclick: () => { close(); party.startCalibration(); } },
+        '🔊 Sync everyone by sound'),
       h('h3', {}, 'Tuning drone'),
       droneControls(),
       h('h3', {}, `Users (${party.members.length})`),
@@ -194,6 +196,8 @@ function drawDetails(body) {
     const busy = st === 'listening' || st === 'calibrating';
     fill(body, ...common,
       st === 'failed' && h('p', { class: 'group-sub error' }, party.sync.message || ''),
+      party.calib?.phase === 'gather' && !party.calibReady
+        && h('button', { class: 'primary wide', onclick: () => { close(); party.markReady(); } }, 'Ready to sync (device next to the host’s)'),
       !playing && h('p', { class: 'group-sub' }, 'When the host starts, hold your phone near theirs for a few beats.'),
       h('button', { class: 'primary wide', disabled: busy || !playing, onclick: () => party.resync() },
         st === 'synced' ? 'Re-sync with host' : 'Sync with host'),
@@ -278,10 +282,121 @@ function warn(kind, who) {
   });
 }
 
+// ---------- sync everyone by sound ----------
+
+/** Host pressed Start with users not yet synced. Resolves 'sound', 'skip' or null. */
+function askCalib(need) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; resolve(v); sheet.close(); };
+    const sheet = openSheet('Sync everyone by sound?', h('div', { class: 'form' },
+      h('p', {}, `${names(need)} ${isAre(need)} not synced yet. Syncing by sound lines every device up with yours: `,
+        'everyone holds their device next to yours and taps Ready, then the room stays quiet for a few seconds.'),
+      h('button', { class: 'primary wide', onclick: () => finish('sound') }, '🔊 Sync by sound'),
+      h('button', { class: 'ghost wide', onclick: () => finish('skip') }, 'Skip, just start'),
+      h('p', { class: 'hint' }, 'Skipping uses the network only, which can be a few milliseconds off.')),
+    { onClose: () => { if (!done) { done = true; resolve(null); } } });
+  });
+}
+
+let calibSheet = null, calibSheetKey = null, dismissedKey = null;
+
+function calibRows() {
+  const live = party.liveMembers;
+  if (!live.length) return h('p', { class: 'hint' }, 'Nobody has joined yet.');
+  return h('div', { class: 'list' }, live.map((m) => h('div', { class: 'list-row member' },
+    h('span', { class: 'member-name' }, m.name || 'User'),
+    h('span', { class: `member-status s-${m.status}` }, MEMBER_TEXT[m.status] || m.status))));
+}
+
+function drawCalib(body) {
+  const c = party.calib;
+  if (party.isHost) {
+    const live = party.liveMembers;
+    const ready = live.filter((m) => m.status === 'ready').length;
+    if (c.phase === 'gather') {
+      fill(body,
+        h('div', { class: 'calib-big' }, '📲'),
+        h('p', { class: 'calib-lead' }, 'Everyone: put your device right next to this one and tap Ready.'),
+        h('p', { class: 'group-sub' }, `${ready} of ${live.length} ready. Sync starts by itself when everyone is.`),
+        calibRows(),
+        h('button', { class: 'primary wide', disabled: !ready, onclick: () => party.beginCalibSync() }, 'Start sync now'),
+        h('button', { class: 'ghost wide', onclick: () => party.cancelCalibration() }, 'Cancel'));
+    } else {
+      fill(body,
+        h('div', { class: 'calib-big pulse' }, '🤫'),
+        h('p', { class: 'calib-lead' }, 'Syncing… keep the room quiet and the devices still.'),
+        calibRows(),
+        h('button', { class: 'ghost wide', onclick: () => party.cancelCalibration() }, 'Cancel'));
+    }
+    return;
+  }
+  if (c.phase === 'gather') {
+    fill(body,
+      h('div', { class: 'calib-big' }, party.calibReady ? '✅' : '📲'),
+      party.calibReady
+        ? h('p', { class: 'calib-lead' }, 'Ready! Keep your device next to the host’s and wait for the others.')
+        : h('p', { class: 'calib-lead' }, 'Put this device right next to the host’s device, then tap Ready.'),
+      !party.calibReady && h('button', { class: 'primary wide big-ready', onclick: () => party.markReady() }, 'Ready'),
+      !party.calibReady && party.sync.status !== 'network'
+        && h('button', { class: 'ghost wide', onclick: () => party.useNetworkOnly() }, 'Skip, follow without the mic'));
+  } else {
+    const st = party.sync.status;
+    fill(body,
+      h('div', { class: 'calib-big pulse' }, '🤫'),
+      h('p', { class: 'calib-lead' }, 'Shh… stay quiet and keep your device still until you hear the chime.'),
+      h('p', { class: 'group-sub' }, st === 'network' ? 'Following without the mic.' : st === 'synced' ? 'This device is synced. Waiting for the others…' : SYNC_TEXT[st] || ''));
+  }
+}
+
+/** Opens, updates or closes the calibration sheet to match the group's state. */
+function renderCalib() {
+  const c = party.active ? party.calib : null;
+  const active = c && (c.phase === 'gather' || c.phase === 'sync');
+  const key = active ? `${c.id}:${c.phase}` : null;
+  if (!active) { calibSheet?.close(); calibSheet = null; calibSheetKey = null; return; }
+  if (key === dismissedKey) return;
+  if (calibSheet && calibSheetKey !== key) { const s = calibSheet; calibSheet = null; s.close(); }
+  if (!calibSheet) {
+    const body = h('div', { class: 'form' });
+    calibSheetKey = key;
+    const sheet = openSheet(c.phase === 'gather' ? 'Sync by sound' : 'Syncing', body,
+      { onClose: () => { if (calibSheet === sheet) { calibSheet = null; dismissedKey = key; } } });
+    calibSheet = sheet;
+  }
+  drawCalib(calibSheet.body.firstChild);
+}
+
+function showCalibDone({ calib: c, mine }) {
+  calibSheet?.close();
+  calibSheet = null;
+  let title, text;
+  if (party.isHost) {
+    title = c.failedCount ? 'Sync finished' : 'Everyone’s in sync!';
+    text = c.failedCount
+      ? `${c.ok} synced. Couldn’t hear you: ${c.failed.join(', ')}${c.failedCount > c.failed.length ? ' and others' : ''}. They can tap Re-sync while you play.`
+      : `${c.ok} ${c.ok === 1 ? 'device is' : 'devices are'} locked to your beat.`;
+    text += ' The beat is paused; tap ▶ Resume when you’re ready.';
+  } else if (mine) {
+    title = 'You’re in sync!';
+    text = 'This device is locked to the host’s beat. Wait for the host to start.';
+  } else {
+    title = 'Couldn’t sync';
+    text = party.sync.message || 'This device couldn’t hear the host. Move closer and tap Re-sync once the host plays.';
+  }
+  const sheet = openSheet(title, h('div', { class: 'form' },
+    h('div', { class: mine ? 'calib-big done' : 'calib-big' }, mine ? '✓' : '⚠️'),
+    h('p', { class: 'calib-lead' }, text),
+    h('button', { class: 'primary wide', onclick: () => sheet.close() }, 'OK')));
+  if (mine) setTimeout(() => sheet.close(), 6000);
+}
+
 // ---------- init ----------
 
 export function initPartyUI() {
   party.warn = warn;
+  party.askCalib = askCalib;
+  party.addEventListener('calibdone', (e) => showCalibDone(e.detail));
   $('groupBtn').addEventListener('click', openDetails);
   $('groupBar').addEventListener('click', openDetails);
   $('tapBtn').addEventListener('pointerdown', (e) => {
@@ -295,14 +410,15 @@ export function initPartyUI() {
   party.addEventListener('change', () => {
     renderBar();
     refreshDetails();
+    renderCalib();
     const st = party.active && !party.isHost ? party.sync.status : null;
     if (st !== lastSync) {
-      if (st === 'synced') { toast('In sync with the host'); navigator.vibrate?.(60); }
+      if (st === 'synced' && !party.calib?.phase?.match(/sync|done/)) { toast('In sync with the host'); navigator.vibrate?.(60); }
       if (st === 'failed') toast(party.sync.message || 'Couldn\'t hear the host');
       lastSync = st;
     }
   });
-  party.addEventListener('members', () => { renderBar(); refreshDetails(); });
+  party.addEventListener('members', () => { renderBar(); refreshDetails(); renderCalib(); });
   party.addEventListener('ended', (e) => {
     if (e.detail.kicked) toast('The host removed you from the group');
     else if (!e.detail.wasHost) toast('The host ended the group');

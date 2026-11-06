@@ -31,6 +31,38 @@ const FLASH_ONLY_KEY = 'tt.groupFlashOnly';
 export const DRONE_NOTES = [[10, 'B♭'], [5, 'F'], [3, 'E♭'], [8, 'A♭'], [0, 'C'], [7, 'G'], [2, 'D'], [9, 'A']];
 export const droneName = (pc) => (DRONE_NOTES.find(([p]) => p === pc) || [pc, '?'])[1];
 
+const CALIB_TIMEOUT = 45000; // ms the sync step may take before the host wraps it up
+const ACTIVE_CALIB = ['gather', 'sync'];
+
+/** Short rising chime that says "sync complete". */
+export function playChime({ ok = true } = {}) {
+  const ctx = getCtx();
+  const t0 = ctx.currentTime + 0.05;
+  const notes = ok ? [523.25, 659.25, 783.99, 1046.5] : [659.25, 523.25];
+  const out = ctx.createGain();
+  out.gain.value = 0.5;
+  out.connect(ctx.destination);
+  notes.forEach((f, i) => {
+    const t = t0 + i * 0.12;
+    const last = i === notes.length - 1;
+    const g = ctx.createGain();
+    g.connect(out);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.6, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (last ? 1.6 : 0.7));
+    for (const [type, mult, level] of [['sine', 1, 1], ['triangle', 2, 0.18], ['sine', 3, 0.06]]) {
+      const o = ctx.createOscillator();
+      const lg = ctx.createGain();
+      o.type = type;
+      o.frequency.value = f * mult;
+      lg.gain.value = level;
+      o.connect(lg).connect(g);
+      o.start(t);
+      o.stop(t + 1.7);
+    }
+  });
+}
+
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 const memberName = () => store.user?.name || (store.user?.email || 'User').split('@')[0];
 const GUEST_NAME_KEY = 'tt.guestName';
@@ -131,16 +163,22 @@ class Party extends EventTarget {
     this.state = rec.state;
     this.savedMet = met.getState();
     this.sync = isHost ? { status: 'host' } : { status: 'idle' };
+    this.calibReady = false;
+    this._calibKey = ACTIVE_CALIB.includes(rec.state.calib?.phase) ? null : calibKey(rec.state.calib);
     if (!isHost || rec.state.status !== 'idle') this._applyToMet(rec.state);
     met.enterGroup({
       clock, state: this.state, delta: 0, audible: isHost, isHost, flashOnly: !isHost && this.flashOnly,
       controls: { play: () => this.primaryAction(), pause: () => this.pause(), stop: () => this.stop() },
     });
     this._subscribe();
+    this._onCalib(rec.state.calib);
     this.timers.push(setInterval(() => this._poll(), 4000));
     if (isHost) {
       this._loadMembers();
-      this.timers.push(setInterval(() => this._loadMembers(), 3000));
+      let tick = 0;
+      this.timers.push(setInterval(() => {
+        if (this.calibActive || ++tick % 3 === 0) this._loadMembers();
+      }, 1000));
       this._unwatchOutput = this._watchOutput();
     }
     else this.timers.push(setInterval(() => this._heartbeat(), 20000));
@@ -228,6 +266,7 @@ class Party extends EventTarget {
     if (met.group) met.group.state = state;
     this._applyDrone(state);
     if (!this.isHost) this._applyToMet(state);
+    this._onCalib(state.calib);
     if (!this.isHost) this._maybeSync();
     this._emit();
   }
@@ -299,9 +338,123 @@ class Party extends EventTarget {
   }
 
   /** Main button. Host: start, then pause / resume (keeps everyone counting). Member: re-sync. */
-  primaryAction() {
+  async primaryAction() {
     if (!this.isHost) return this.resync();
-    return this.state.status === 'playing' ? this.pause() : this.togglePlay();
+    if (this.state.status === 'playing') return this.pause();
+    if (this.calibActive) return;
+    // Anyone not yet synced? Offer to sync everyone by sound first.
+    const need = this.liveMembers.filter((m) => !['synced', 'network'].includes(m.status));
+    if (need.length && this.askCalib) {
+      const a = await this.askCalib(need);
+      if (!this.record || this.state.status === 'playing') return;
+      if (a === 'sound') return this.startCalibration();
+      if (a !== 'skip') return; // closed the question
+      return this.togglePlay({ calib: { phase: 'off', id: Date.now() } });
+    }
+    return this.togglePlay();
+  }
+
+  // ---------- sync everyone by sound (host-led calibration) ----------
+
+  get calibActive() { return ACTIVE_CALIB.includes(this.state?.calib?.phase); }
+  get calib() { return this.state?.calib || null; }
+
+  /** Users whose device has checked in recently. */
+  get liveMembers() {
+    const now = this.clock?.serverNow() ?? Date.now();
+    return this.members.filter((m) => now - Date.parse(m.updated) < 50000);
+  }
+
+  /** Host: ask everyone to bring their device close and tap Ready. */
+  startCalibration() {
+    if (!this.isHost || this.calibActive) return;
+    this._push({
+      ...this.state, status: 'idle', prev: null, mute: null,
+      drone: { ...(this.state.drone || {}), on: false },
+      calib: { phase: 'gather', id: Date.now() },
+    }, { immediate: true });
+    this._loadMembers();
+  }
+
+  /** Host: everyone's ready (or the host didn't want to wait): play clicks and let phones listen. */
+  beginCalibSync() {
+    const c = this.state?.calib;
+    if (!this.isHost || c?.phase !== 'gather') return;
+    const m = met.getState();
+    const now = this.clock.serverNow();
+    this._push({
+      ...this.state, status: 'playing', prev: null, mute: null,
+      t0: Math.round(now + LEAD_START), bpm: m.bpm, beats: m.beats,
+      calib: { phase: 'sync', id: c.id, at: Math.round(now) },
+    }, { immediate: true });
+  }
+
+  /** Host: give up on the sync step. */
+  cancelCalibration() {
+    if (!this.isHost || !this.calibActive) return;
+    const playing = this.state.status === 'playing';
+    this._push({ ...this.state, status: 'idle', prev: null, mute: null, calib: null }, { immediate: true });
+    if (playing) this._loadMembers();
+  }
+
+  /** Host: called whenever the member list refreshes during a calibration. */
+  _checkCalib() {
+    const c = this.state?.calib;
+    if (!this.isHost || !c) return;
+    const live = this.liveMembers;
+    if (c.phase === 'gather') {
+      // Everyone tapped Ready (users who chose "no mic" don't need to).
+      if (live.some((m) => m.status === 'ready') && live.every((m) => m.status === 'ready' || m.status === 'network')) this.beginCalibSync();
+    } else if (c.phase === 'sync') {
+      const elapsed = this.clock.serverNow() - c.at;
+      const settled = (m) => ['synced', 'failed', 'network'].includes(m.status);
+      if ((elapsed > LEAD_START + 2000 && live.every(settled)) || elapsed > CALIB_TIMEOUT) this._finishCalib(live);
+    }
+  }
+
+  _finishCalib(live) {
+    const c = this.state.calib;
+    const ok = live.filter((m) => m.status === 'synced' || m.status === 'network').length;
+    const failed = live.filter((m) => m.status !== 'synced' && m.status !== 'network').map((m) => m.name || 'A user');
+    // Pause (silent but still counting) so the chime is clear and nobody has to re-sync.
+    const at = nextBeatAt(this.state, this.clock.serverNow() + LEAD_MUTE);
+    this._push({
+      ...this.state, mute: { on: true, at },
+      calib: { phase: 'done', id: c.id, ok, failed: failed.slice(0, 6), failedCount: failed.length },
+    }, { immediate: true });
+  }
+
+  /** Member: tapped Ready with the device next to the host's. */
+  markReady() {
+    if (this.isHost || this.calib?.phase !== 'gather') return;
+    this.calibReady = true;
+    this._updateMember({ status: 'ready' });
+    this._emit();
+  }
+
+  /** Reacts once to each new calibration phase (both host and members). */
+  _onCalib(c) {
+    const key = calibKey(c);
+    if (key === this._calibKey) return;
+    this._calibKey = key;
+    if (!c) { this.calibReady = false; this._emit(); return; }
+    if (!this.isHost) {
+      if (c.phase === 'gather') {
+        this.calibReady = false;
+        if (!this.syncing && this.sync.status !== 'network') this._setSync({ status: 'waiting' });
+        this._updateMember({ status: 'joined' });
+      } else if (c.phase === 'sync') {
+        // Sync again even if this phone was synced before (it may have moved).
+        if (!this.syncing && this.sync.status !== 'network') this._setSync({ status: 'waiting' });
+      }
+    }
+    if (c.phase === 'done') {
+      const mine = this.isHost ? true : this.sync.status === 'synced' || this.sync.status === 'network';
+      try { playChime({ ok: mine }); } catch { /* audio not available */ }
+      navigator.vibrate?.(mine ? [40, 60, 40] : 200);
+      this.dispatchEvent(new CustomEvent('calibdone', { detail: { calib: c, mine } }));
+    }
+    this._emit();
   }
 
   /** Host pause/resume, with a warning if pausing would interrupt someone's sync. */
@@ -366,14 +519,14 @@ class Party extends EventTarget {
     return () => { clearInterval(t); navigator.mediaDevices?.removeEventListener?.('devicechange', onChange); };
   }
 
-  togglePlay() {
+  togglePlay(extra = {}) {
     if (!this.isHost) return;
     const m = met.getState();
     if (this.state.status === 'playing') {
-      this._push({ ...this.state, status: 'idle', prev: null, mute: null }, { immediate: true });
+      this._push({ ...this.state, status: 'idle', prev: null, mute: null, calib: this.calibActive ? null : this.state.calib, ...extra }, { immediate: true });
     } else {
       this._push({
-        ...this.state, status: 'playing', prev: null, mute: null,
+        ...this.state, status: 'playing', prev: null, mute: null, ...extra,
         t0: Math.round(this.clock.serverNow() + LEAD_START), bpm: m.bpm, beats: m.beats,
       }, { immediate: true });
     }
@@ -455,10 +608,17 @@ class Party extends EventTarget {
       const r = await store.api(`/api/collections/party_members/records?filter=${f}&perPage=200&sort=created`);
       this.members = r.items;
       this.dispatchEvent(new Event('members'));
+      this._checkCalib();
     } catch { /* keep last list */ }
   }
 
-  async _updateMember(fields) {
+  /** Updates are sent one at a time so a later status can't be overwritten by an earlier one. */
+  _updateMember(fields) {
+    this._memberQ = (this._memberQ || Promise.resolve()).then(() => this._sendMember(fields));
+    return this._memberQ;
+  }
+
+  async _sendMember(fields) {
     if (!this.member) return;
     try {
       this.member = await store.api(`/api/collections/party_members/records/${this.member.id}`, {
@@ -523,6 +683,9 @@ class Party extends EventTarget {
   _maybeSync() {
     if (this.isHost || this.syncing) return;
     const st = this.sync.status;
+    const c = this.state.calib;
+    if (c?.phase === 'gather') return;
+    if (c?.phase === 'off' && this.state.status === 'playing' && (st === 'idle' || st === 'waiting')) return this.useNetworkOnly();
     if (this.state.status !== 'playing') {
       if (st === 'idle' || st === 'failed') this._setSync({ ...this.sync, status: 'waiting' });
       return;
@@ -605,5 +768,7 @@ class Party extends EventTarget {
     this._updateMember({ status: 'network' });
   }
 }
+
+function calibKey(c) { return c ? `${c.id}:${c.phase}` : null; }
 
 export const party = new Party();

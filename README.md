@@ -123,8 +123,15 @@ The host needs an account; everyone else can join as a guest with just their nam
 2. Everyone else scans the QR code in the host's group sheet with their camera (or taps **👥 Group**
    and types the code), enters their name if not signed in, and taps **Join**. Each phone first plays a few
    quick clicks to measure its own speaker delay (keep quiet for a second).
-3. The host presses **▶**. Everyone holds their phone near the host's for a few beats: each phone
-   listens, locks onto the host's clicks, then joins in. The group bar turns green ("In sync ±1 ms").
+3. The host presses **▶**. If anyone isn't synced yet, the host is asked **Sync everyone by sound?**
+   - **Sync by sound:** every phone asks its user to put the device next to the host's and tap
+     **Ready**. Once everyone is ready (or the host taps **Start sync now**), everyone is told to stay
+     quiet while the host's phone clicks and each phone locks onto it. A chime plays on every device
+     when it's done, and the beat is left paused so the host can **▶ Resume** when the band is ready.
+   - **Skip, just start:** phones follow the network clock only (a few ms less exact).
+
+   The host can run it again any time from the group sheet (**🔊 Sync everyone by sound**). Users who
+   join later still sync on their own by holding their phone near the host's for a few beats.
 
 While it runs, the host's controls work for everyone:
 
