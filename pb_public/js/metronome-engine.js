@@ -343,7 +343,8 @@ export class Metronome extends EventTarget {
     }
     const g = this.gap;
     const gapMuted = !counting && g.enabled && g.play > 0 && this.bar % (g.play + g.mute) >= g.play;
-    const silent = level === 0 || gapMuted || this.beatSilenced || (isMain && sub.silentMain && !counting);
+    // Always a real true/false: `undefined` here made the beat display flip its grey "silent" look on and off.
+    const silent = !!(level === 0 || gapMuted || this.beatSilenced || (isMain && sub.silentMain && !counting));
 
     if (!silent && this.soundSet) {
       if (counting && !isMain) { /* count-in clicks beats only */ } else if (isMain) {

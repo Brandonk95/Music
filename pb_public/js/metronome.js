@@ -95,8 +95,8 @@ function loop() {
     const el = beats[ev.beat];
     if (el) {
       el.classList.add('now');
-      el.classList.toggle('silent', ev.silent);
-      el.classList.toggle('counting', ev.counting);
+      el.classList.toggle('silent', !!ev.silent); // toggle(x, undefined) would flip it instead of setting it
+      el.classList.toggle('counting', !!ev.counting);
     }
     if (!ev.silent) {
       if (settings.flash || ev.forceFlash) {
