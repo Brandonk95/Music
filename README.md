@@ -146,6 +146,11 @@ While it runs, the host's controls work for everyone:
   start on the next downbeat, so the grid never jumps.
 - **Tuning drone:** the host picks a concert pitch (B♭, F, E♭, A♭, C, G, D, A), optionally with a
   5th, and every phone plays it, tuned to the host's A4. It keeps going until the host turns it off.
+- **Section tuning:** with the drone on, the host turns on **Section tuning**. Every user's phone
+  switches to the Tuner, locked to the drone note (shown as their written note, e.g. "play your C
+  (concert B♭)" on B♭ clarinet), and the drone plays only on the host's phone so it doesn't fool the
+  users' tuners. The host's group sheet shows each user live: *In tune*, *Flat −12¢*, *Sharp +8¢*
+  or *Not playing*. Turning it off sends everyone back to where they were.
 - **Flash only:** any user can switch their own phone to flash and vibrate without clicks, from the
   group sheet.
 - Users' tempo controls are locked while they're in a group. The host can remove a user with ✕

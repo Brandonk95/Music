@@ -18,6 +18,7 @@ import { wake } from './wakelock.js';
 import * as acoustic from './acoustic.js';
 import { sustain } from './tone.js';
 import { settings } from './settings.js';
+import { setGroupTarget, tunerEvents } from './tuner.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LEAD_START = 2000; // ms between pressing play and the first beat
@@ -172,12 +173,13 @@ class Party extends EventTarget {
     });
     this._subscribe();
     this._onCalib(rec.state.calib);
+    this._applySection(rec.state);
     this.timers.push(setInterval(() => this._poll(), 4000));
     if (isHost) {
       this._loadMembers();
       let tick = 0;
       this.timers.push(setInterval(() => {
-        if (this.calibActive || ++tick % 3 === 0) this._loadMembers();
+        if (this.calibActive || this.sectionTune || ++tick % 3 === 0) this._loadMembers();
       }, 1000));
       this._unwatchOutput = this._watchOutput();
     }
@@ -204,6 +206,7 @@ class Party extends EventTarget {
     this._applying = false;
     wake.release('group');
     this._applyDrone(null);
+    this._applySection(null);
     this.record = null;
     this.state = null;
     this.members = [];
@@ -267,6 +270,7 @@ class Party extends EventTarget {
     this._applyDrone(state);
     if (!this.isHost) this._applyToMet(state);
     this._onCalib(state.calib);
+    this._applySection(state);
     if (!this.isHost) this._maybeSync();
     this._emit();
   }
@@ -546,13 +550,13 @@ class Party extends EventTarget {
     if (!this.isHost) return;
     if (note && !this.droneOn && !(await this._guard('drone'))) return;
     if (!this.record) return;
-    const drone = note ? { on: true, pc: note.pc, fifth: !!note.fifth } : { ...(this.state.drone || {}), on: false };
+    const drone = note ? { on: true, pc: note.pc, fifth: !!note.fifth, section: !!this.state.drone?.section } : { ...(this.state.drone || {}), on: false };
     this._push({ ...this.state, drone, a4: settings.a4 }, { immediate: true });
   }
 
   /** Plays the drone described by the party state on this phone (C4–B4, tuned to the host's A4). */
   _applyDrone(s) {
-    const d = s?.drone?.on ? s.drone : null;
+    const d = s?.drone?.on && !(s.drone.section && !this.isHost) ? s.drone : null;
     const a4 = s?.a4 || 440;
     const key = d ? `${d.pc}:${d.fifth ? 1 : 0}:${a4}` : null;
     if (key === this._droneKey) return;
@@ -571,6 +575,52 @@ class Party extends EventTarget {
   }
 
   get droneOn() { return !!this.state?.drone?.on; }
+
+  // ---------- section tuning ----------
+
+  /** { pc, a4 } while the host's drone is on with section tuning, else null. */
+  get sectionTune() {
+    const d = this.state?.drone;
+    return d?.on && d.section ? { pc: d.pc, a4: this.state.a4 || 440 } : null;
+  }
+
+  /** Host: lock everyone's tuner to the drone note (the drone then plays only on the host's phone). */
+  setDroneSection(on) {
+    if (!this.isHost) return;
+    this._push({ ...this.state, drone: { ...(this.state.drone || { on: false, pc: 10 }), section: !!on }, a4: settings.a4 }, { immediate: true });
+  }
+
+  /** Members: point the tuner at the host's note and report how far off they are. */
+  _applySection(s) {
+    const d = s?.drone;
+    const t = !this.isHost && d?.on && d.section ? { pc: d.pc, a4: s.a4 || 440 } : null;
+    const key = t ? `${t.pc}:${t.a4}` : null;
+    if (key === this._sectionKey) return;
+    const was = this._sectionKey;
+    this._sectionKey = key;
+    setGroupTarget(t);
+    clearInterval(this._sectionTimer);
+    tunerEvents.removeEventListener('reading', this._onReading);
+    if (t) {
+      this._reading = null;
+      this._sent = undefined;
+      this._onReading = (e) => { this._reading = e.detail ? { cents: e.detail.cents, at: Date.now() } : this._reading; };
+      tunerEvents.addEventListener('reading', this._onReading);
+      this._sectionTimer = setInterval(() => this._reportTuning(), 1000);
+    } else if (was && this.member) {
+      this._updateMember({ tuneCents: 0, tuneAt: 0 });
+    }
+    this.dispatchEvent(new CustomEvent('section', { detail: { on: !!t, pc: t?.pc, changed: !!was !== !!t } }));
+  }
+
+  _reportTuning() {
+    const r = this._reading && Date.now() - this._reading.at < 1500 ? Math.round(this._reading.cents) : null;
+    // Send changes at once; resend a steady reading every few seconds so the host knows it's live.
+    if (r === this._sent && (r == null || Date.now() - this._sentAt < 3000)) return;
+    this._sent = r;
+    this._sentAt = Date.now();
+    this._updateMember(r == null ? { tuneAt: 0 } : { tuneCents: r, tuneAt: Date.now() });
+  }
 
   /** Member option: show the beat as flash + vibration, no click sound. Saved on the device. */
   get flashOnly() { return localStorage.getItem(FLASH_ONLY_KEY) === '1'; }

@@ -4,6 +4,7 @@ import { qrSvg } from './qr.js';
 import { met } from './metronome.js';
 import { store } from './store.js';
 import { h, fill, $, toast, openSheet } from './ui.js';
+import { settings } from './settings.js';
 
 const SYNC_TEXT = {
   idle: 'Joined',
@@ -50,6 +51,17 @@ function qrBlock(code) {
     h('button', { class: 'ghost wide', onclick: share }, navigator.share ? 'Share join link' : 'Copy join link'));
 }
 
+/** Host view of one user's tuner during section tuning. */
+function tuneBadge(m) {
+  const fresh = m.tuneAt && (party.clock?.serverNow() ?? Date.now()) - Date.parse(m.updated) < 7000;
+  if (!fresh) return h('span', { class: 'member-status tune-idle' }, 'Not playing');
+  const c = Math.round(m.tuneCents);
+  const a = Math.abs(c);
+  const cls = a <= settings.tolerance ? 'good' : a <= 15 ? 'close' : 'far';
+  const word = cls === 'good' ? 'In tune' : c < 0 ? 'Flat' : 'Sharp';
+  return h('span', { class: `member-status tune-${cls}` }, `${word} ${c > 0 ? '+' : ''}${c}¢`);
+}
+
 function droneControls() {
   const d = party.state?.drone || {};
   const on = !!d.on;
@@ -63,6 +75,10 @@ function droneControls() {
     h('label', { class: 'field row toggle-row' }, 'Add a perfect 5th',
       h('input', { type: 'checkbox', class: 'switch', checked: !!d.fifth,
         onchange: (e) => party.setDroneFifth(e.target.checked) })),
+    h('label', { class: 'field row toggle-row' }, 'Section tuning: everyone’s tuner locks to this note',
+      h('input', { type: 'checkbox', class: 'switch', checked: !!d.section,
+        onchange: (e) => party.setDroneSection(e.target.checked) })),
+    d.section && h('p', { class: 'hint' }, 'Users’ phones open the tuner and show how far they are from your note; you see everyone’s reading below. The drone then plays only on your phone.'),
     h('p', { class: 'hint' }, 'Concert pitch, on every phone, tuned to your A4. Runs until you turn it off, even while the metronome is stopped.'));
 }
 
@@ -174,7 +190,7 @@ function drawDetails(body) {
       h('div', { class: 'list' },
         party.members.map((m) => h('div', { class: 'list-row member' },
           h('span', { class: 'member-name' }, m.name || 'User'),
-          h('span', { class: `member-status s-${m.status}` }, MEMBER_TEXT[m.status] || m.status,
+          party.sectionTune ? tuneBadge(m) : h('span', { class: `member-status s-${m.status}` }, MEMBER_TEXT[m.status] || m.status,
             m.status === 'synced' && m.syncMs ? ` ±${Math.max(1, Math.round(m.syncMs))} ms` : ''),
           h('button', {
             class: 'icon-btn danger', 'aria-label': `Remove ${m.name || 'user'}`, title: 'Remove from group',
@@ -416,6 +432,20 @@ export function initPartyUI() {
       if (st === 'synced' && !party.calib?.phase?.match(/sync|done/)) { toast('In sync with the host'); navigator.vibrate?.(60); }
       if (st === 'failed') toast(party.sync.message || 'Couldn\'t hear the host');
       lastSync = st;
+    }
+  });
+  let sectionFrom = null;
+  party.addEventListener('section', (e) => {
+    const { on, pc, changed } = e.detail;
+    const tab = (name) => document.querySelector(`.tabbar button[data-tab="${name}"]`);
+    const current = document.querySelector('.tabbar button[aria-selected="true"]')?.dataset.tab;
+    if (on) {
+      if (changed) { sectionFrom = current; tab('tuner')?.click(); navigator.vibrate?.(80); }
+      toast(`Section tuning: concert ${droneName(pc)}`, 4000);
+    } else if (changed) {
+      toast('Section tuning ended');
+      if (sectionFrom && sectionFrom !== 'tuner' && current === 'tuner') tab(sectionFrom)?.click();
+      sectionFrom = null;
     }
   });
   party.addEventListener('members', () => { renderBar(); refreshDetails(); renderCalib(); });

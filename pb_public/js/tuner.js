@@ -24,6 +24,28 @@ let freqWindow = [];
 let smoothCents = 0;
 let lastTarget = null;
 let justOff = 0;
+let groupTarget = null; // { pc, a4 } while the group host runs section tuning
+
+/** Fires 'reading' (detail: { cents } or null) every frame while section tuning. */
+export const tunerEvents = new EventTarget();
+
+/** Group section tuning: lock the target to one concert pitch class (null = back to normal). */
+export function setGroupTarget(t) {
+  groupTarget = t ? { pc: t.pc, a4: t.a4 || settings.a4 } : null;
+  lastTarget = null;
+  current = null;
+  freqWindow = [];
+  if (running) updateReadout(performance.now());
+  else if ($('noteDisplay')) $('concertLabel').textContent = sectionLine();
+}
+
+function sectionLine() {
+  if (!groupTarget) return '';
+  const tr = stringMidis.length ? 0 : transposeOf();
+  const concert = noteLabel(60 + groupTarget.pc, settings.noteNames).name;
+  const yours = noteLabel(60 + groupTarget.pc + tr, settings.noteNames).name;
+  return tr ? `Section tuning: play your ${yours} (concert ${concert})` : `Section tuning: play ${concert}`;
+}
 let lastHeard = 0;
 let inTuneSince = 0;
 let current = null; // { freq, targetMidi, cents }
@@ -370,10 +392,13 @@ function frame(now) {
   }
 
   if (freq) {
-    const midiF = freqToMidi(freq, settings.a4);
+    const midiF = freqToMidi(freq, groupTarget?.a4 || settings.a4);
 
     let target;
-    if (stringMidis.length) {
+    if (groupTarget) {
+      target = Math.round((midiF - groupTarget.pc) / 12) * 12 + groupTarget.pc; // nearest octave of the host's note
+      justOff = 0;
+    } else if (stringMidis.length) {
       if (auto) {
         let best = 0;
         stringMidis.forEach((m, i) => { if (Math.abs(midiF - m) < Math.abs(midiF - stringMidis[best])) best = i; });
@@ -391,7 +416,7 @@ function frame(now) {
       target = best.n;
       justOff = best.off * 100;
     } else target = Math.round(midiF);
-    if (stringMidis.length || settings.justRoot < 0) justOff = 0;
+    if (groupTarget || stringMidis.length || settings.justRoot < 0) justOff = 0;
 
     const cents = (midiF - target) * 100 - justOff;
     if (target !== lastTarget) { smoothCents = cents; lastTarget = target; inTuneSince = 0; }
@@ -405,6 +430,7 @@ function frame(now) {
   }
   histPos = (histPos + 1) % HISTORY_LEN;
   if (current) strobePhase += current.cents * dt * 2.2;
+  if (groupTarget) tunerEvents.dispatchEvent(new CustomEvent('reading', { detail: current && { cents: current.cents } }));
   updateReadout(now);
   draw();
 }
@@ -413,6 +439,7 @@ function updateReadout(now) {
   const disp = $('noteDisplay');
   if (!current) {
     disp.className = 'note-display idle';
+    if (groupTarget) $('concertLabel').textContent = sectionLine();
     if (!lastTarget) $('tuneHint').textContent = 'Play a note…';
     return;
   }
@@ -428,6 +455,7 @@ function updateReadout(now) {
     const o = Math.round(j.off);
     extra.push(`${j.role} of ${pitchClassName(settings.justRoot)}${o ? ` (${o > 0 ? '+' : ''}${o}¢)` : ''}`);
   }
+  if (groupTarget) { extra.length = 0; extra.push(sectionLine()); }
   $('concertLabel').textContent = extra.join(' · ');
   const c = Math.round(cents);
   $('centsLabel').textContent = `${c > 0 ? '+' : ''}${c}¢`;

@@ -459,3 +459,9 @@ body { position: fixed; inset: 0; display: flex; flex-direction: column; }
 .member-status.s-ready { color: var(--good); }
 @keyframes calib-pulse { 50% { transform: scale(1.12); opacity: .75; } }
 @keyframes calib-pop { from { transform: scale(.3); opacity: 0; } }
+
+/* group: section tuning readings (host) */
+.member-status.tune-good { color: var(--good); font-weight: 600; }
+.member-status.tune-close { color: var(--close); font-weight: 600; }
+.member-status.tune-far { color: var(--far); font-weight: 600; }
+.member-status.tune-idle { color: var(--muted); }
